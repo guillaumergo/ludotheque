@@ -43,6 +43,13 @@
   .tile .badge{position:absolute;top:10px;right:10px;background:rgba(255,255,255,.95);color:var(--ink);
                border-radius:999px;width:38px;height:38px;display:none;align-items:center;justify-content:center;font-size:19px}
   body.edit .tile .badge{display:flex}
+  .tile.img{padding:0;overflow:hidden;justify-content:flex-end;gap:0}
+  .tile .mini{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#fff}
+  .tile.img .nom{position:relative;width:100%;padding:10px 8px;font-size:17px;-webkit-line-clamp:1;display:block;
+                 white-space:nowrap;text-overflow:ellipsis}
+  .tile.img .badge{z-index:1}
+  .apercu{width:150px;height:94px;border-radius:12px;object-fit:cover;background:var(--bg);box-shadow:0 0 0 1px var(--line)}
+  #capture{position:fixed;left:0;top:0;width:960px;height:600px;border:0;opacity:.01;pointer-events:none;z-index:-1}
   body.edit .tile{animation:wiggle .35s ease-in-out infinite alternate}
   @keyframes wiggle{from{transform:rotate(-1.2deg)}to{transform:rotate(1.2deg)}}
   .vide{max-width:560px;margin:60px auto;text-align:center;color:var(--muted);font-size:18px;line-height:1.5}
@@ -112,13 +119,22 @@
 <input type="file" id="fichiers" accept=".html,.htm,text/html" multiple hidden>
 <input type="file" id="fichierRemplace" accept=".html,.htm,text/html" hidden>
 <input type="file" id="fichierSauvegarde" accept=".json,application/json" hidden>
+<input type="file" id="fichierImage" accept="image/*" hidden>
 
 <dialog id="dlg">
   <h2>Modifier le jeu</h2>
   <label for="fNom">Nom</label>
   <input type="text" id="fNom" maxlength="40">
   <label>Image</label>
-  <div class="row"><input type="text" id="fEmo" maxlength="4" style="width:80px;text-align:center;font-size:26px"></div>
+  <div class="row" style="align-items:center">
+    <img id="fApercu" class="apercu" alt="Miniature du jeu" hidden>
+    <input type="text" id="fEmo" maxlength="4" style="width:80px;text-align:center;font-size:26px" title="Emoji utilisé quand il n'y a pas de miniature">
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button class="btn" type="button" id="dPhoto">🖼️ Choisir une image</button>
+    <button class="btn" type="button" id="dCapture">📸 Refaire la capture</button>
+    <button class="btn" type="button" id="dSansImage">😀 Emoji seul</button>
+  </div>
   <div class="row emo-choix" id="emoChoix" style="margin-top:8px"></div>
   <label>Couleur</label>
   <div class="row couleurs" id="couleurs"></div>
@@ -215,8 +231,16 @@ function afficher(){
                     .sort((a,b)=> (a.ordre??0)-(b.ordre??0));
   liste.forEach(j=>{
     const b=document.createElement("button"); b.className="tile"; b.style.background=j.couleur;
-    b.innerHTML=`<span class="badge">✏️</span><span class="emo"></span><span class="nom"></span>`;
-    b.querySelector(".emo").textContent=j.emoji; b.querySelector(".nom").textContent=j.nom;
+    if (j.miniature){
+      b.classList.add("img");
+      b.innerHTML=`<img class="mini" alt=""><span class="badge">✏️</span><span class="nom"></span>`;
+      b.querySelector(".mini").src=j.miniature;
+      b.querySelector(".nom").style.background=j.couleur;
+    } else {
+      b.innerHTML=`<span class="badge">✏️</span><span class="emo"></span><span class="nom"></span>`;
+      b.querySelector(".emo").textContent=j.emoji;
+    }
+    b.querySelector(".nom").textContent=j.nom;
     b.onclick=()=> modeEdition ? ouvrirEdition(j) : jouer(j);
     grid.appendChild(b);
   });
@@ -246,12 +270,14 @@ async function ajouterFichiers(files){
     if (existant && confirm(`« ${nom} » est déjà dans la ludothèque.\n\nOK = remplacer par cette nouvelle version\nAnnuler = l'ajouter en double`)){
       existant.html = html; existant.maj = Date.now();
       await enregistrer(existant); maj++;
+      if (existant.miniAuto || !existant.miniature) demanderMiniature(existant);
     } else {
       const j = { id:nouvelId(), nom, emoji:emojiPour(nom+" "+f.name),
                   couleur:COULEURS[jeux.length % COULEURS.length],
                   dossier: filtre!=="Tous" ? filtre : "", html,
                   ordre: Date.now(), ajout: Date.now() };
       await enregistrer(j); jeux.push(j); ajoutes++;
+      demanderMiniature(j);
     }
   }
   afficher();
@@ -282,9 +308,38 @@ $("titre").onclick = ()=>{
   if (v && v.trim()){ ecrireTitre(v.trim()); afficher(); }
 };
 
-let edite=null, couleurChoisie=null;
+let edite=null, couleurChoisie=null, miniEdit=null, miniAutoEdit=false;
+function majApercu(){
+  const a=$("fApercu");
+  if (miniEdit){ a.src=miniEdit; a.hidden=false; } else { a.hidden=true; a.removeAttribute("src"); }
+}
+function lireImage(f){
+  return new Promise((res,rej)=>{
+    const u=URL.createObjectURL(f), im=new Image();
+    im.onload=()=>{ const w=Math.min(480,im.naturalWidth), h=Math.round(im.naturalHeight*w/im.naturalWidth);
+      const c=document.createElement("canvas"); c.width=w; c.height=h; c.getContext("2d").drawImage(im,0,0,w,h);
+      URL.revokeObjectURL(u); res(c.toDataURL("image/jpeg",.85)); };
+    im.onerror=()=>{ URL.revokeObjectURL(u); rej(); };
+    im.src=u;
+  });
+}
+$("dPhoto").onclick = ()=> $("fichierImage").click();
+$("fichierImage").onchange = async (e)=>{
+  const f=e.target.files[0]; e.target.value=""; if(!f) return;
+  try{ miniEdit=await lireImage(f); miniAutoEdit=false; majApercu(); }catch(err){ toast("Image illisible"); }
+};
+$("dSansImage").onclick = ()=>{ miniEdit=null; miniAutoEdit=false; majApercu(); };
+$("dCapture").onclick = async ()=>{
+  const b=$("dCapture"), txt=b.textContent; b.disabled=true; b.textContent="⏳ Capture…";
+  try{
+    const m=await capturer(edite.html);
+    if (m){ miniEdit=m; miniAutoEdit=true; majApercu(); }
+    else toast("Capture impossible pour ce jeu : choisis plutôt une image (une capture d'écran de la tablette marche très bien)");
+  }catch(err){ toast("Capture impossible pour ce jeu : choisis plutôt une image"); }
+  b.disabled=false; b.textContent=txt;
+};
 function ouvrirEdition(j){
-  edite=j; couleurChoisie=j.couleur;
+  edite=j; couleurChoisie=j.couleur; miniEdit=j.miniature||null; miniAutoEdit=!!j.miniAuto; majApercu();
   $("fNom").value=j.nom; $("fEmo").value=j.emoji; $("fDossier").value=j.dossier||"";
   $("emoChoix").innerHTML="";
   EMOJIS.forEach(e=>{ const b=document.createElement("button"); b.type="button"; b.textContent=e;
@@ -304,6 +359,9 @@ $("dOk").onclick = async ()=>{
   edite.emoji = $("fEmo").value.trim() || edite.emoji;
   edite.couleur = couleurChoisie;
   edite.dossier = $("fDossier").value.trim();
+  edite.miniature = miniEdit || null;
+  edite.miniAuto = !!miniEdit && miniAutoEdit;
+  edite.miniTente = true;
   await enregistrer(edite); $("dlg").close(); afficher();
 };
 $("dSupprimer").onclick = async ()=>{
@@ -316,7 +374,79 @@ $("fichierRemplace").onchange = async (e)=>{
   const f=e.target.files[0]; e.target.value=""; if(!f) return;
   edite.html = await f.text(); edite.maj=Date.now();
   await enregistrer(edite); toast("Nouvelle version enregistrée");
+  if (edite.miniAuto || !edite.miniature) demanderMiniature(edite);
 };
+
+/* ---------- Miniatures automatiques ----------
+   Le jeu est chargé en coulisses, rendu muet et sans caméra, puis photographié. */
+const SCRIPT_MUET = `<script>(function(){try{
+  var ok=function(){return Promise.resolve();};
+  HTMLMediaElement.prototype.play=function(){this.muted=true;return Promise.resolve();};
+  if(navigator.mediaDevices){navigator.mediaDevices.getUserMedia=function(){return Promise.reject(new Error("apercu"));};}
+  if(window.speechSynthesis){speechSynthesis.speak=function(){};}
+  var AC=window.AudioContext||window.webkitAudioContext;
+  if(AC){var F=function(a){var c=new AC(a);try{c.suspend();}catch(e){}c.resume=ok;return c;};F.prototype=AC.prototype;window.AudioContext=window.webkitAudioContext=F;}
+  var g=HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext=function(t,o){if(/webgl/i.test(t)){o=Object.assign({},o||{},{preserveDrawingBuffer:true});}return g.call(this,t,o);};
+  window.alert=function(){};window.confirm=function(){return false;};window.prompt=function(){return null;};window.open=function(){return null;};
+  Element.prototype.requestFullscreen=ok;
+}catch(e){}})();<\/script>`;
+function versionMuette(html){
+  return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, m=>m+SCRIPT_MUET) : SCRIPT_MUET+html;
+}
+let h2cPromise=null;
+function chargerH2C(){
+  if (window.html2canvas) return Promise.resolve();
+  if (!h2cPromise) h2cPromise=new Promise((res,rej)=>{
+    const s=document.createElement("script"); s.src="html2canvas.min.js";
+    s.onload=res; s.onerror=()=>{ h2cPromise=null; rej(new Error("outil de capture absent")); };
+    document.head.appendChild(s);
+  });
+  return h2cPromise;
+}
+const attendre = (ms)=> new Promise(r=>setTimeout(r,ms));
+function imageVide(cv){
+  try{
+    const c=document.createElement("canvas"); c.width=24; c.height=15;
+    const x=c.getContext("2d"); x.drawImage(cv,0,0,24,15);
+    const d=x.getImageData(0,0,24,15).data; let mn=255,mx=0;
+    for(let i=0;i<d.length;i+=4){ const v=(d[i]+d[i+1]+d[i+2])/3; if(v<mn)mn=v; if(v>mx)mx=v; }
+    return mx-mn<12;
+  }catch(e){ return false; }
+}
+async function capturer(html){
+  await chargerH2C();
+  const f=document.createElement("iframe"); f.id="capture"; f.tabIndex=-1; f.setAttribute("aria-hidden","true");
+  const url=URL.createObjectURL(new Blob([versionMuette(html)],{type:"text/html"}));
+  document.body.appendChild(f);
+  try{
+    await new Promise(res=>{ f.onload=res; f.src=url; setTimeout(res,6000); });
+    await attendre(1800);
+    const doc=f.contentDocument; if(!doc || !doc.documentElement) return null;
+    const cv = await Promise.race([
+      html2canvas(doc.documentElement,{width:960,height:600,windowWidth:960,windowHeight:600,x:0,y:0,scale:.5,logging:false,useCORS:true}),
+      attendre(9000).then(()=>{ throw new Error("délai dépassé"); })
+    ]);
+    if (imageVide(cv)) return null;
+    return cv.toDataURL("image/jpeg",.82);
+  } finally {
+    f.remove(); URL.revokeObjectURL(url);
+  }
+}
+const fileMini=[]; let miniEnCours=false;
+function demanderMiniature(j){ if(!fileMini.includes(j)) fileMini.push(j); traiterMiniatures(); }
+async function traiterMiniatures(){
+  if (miniEnCours) return; miniEnCours=true;
+  while (fileMini.length){
+    while ($("lecteur").classList.contains("open")) await attendre(1500);   // jamais pendant qu'un enfant joue
+    const j=fileMini.shift();
+    if (j.miniature && !j.miniAuto) continue;                               // image choisie à la main : on n'y touche pas
+    try{ const m=await capturer(j.html); if(m){ j.miniature=m; j.miniAuto=true; } }catch(e){}
+    j.miniTente=true;
+    if (jeux.includes(j)){ try{ await enregistrer(j); }catch(e){} afficher(); }
+  }
+  miniEnCours=false;
+}
 $("dTelecharger").onclick = ()=>{
   telecharger(new Blob([edite.html],{type:"text/html"}), nomFichier(edite.nom)+".html");
 };
@@ -390,6 +520,8 @@ async function restaurer(f){
     b.innerHTML="⚠️ Ce navigateur ne permet pas d'enregistrer des jeux quand la ludothèque est ouverte de cette façon. Ouvre-la plutôt depuis son adresse web (version installée), elle fonctionnera ensuite hors ligne.";
   }
   afficher();
+  // Jeux déjà présents sans miniature : on les photographie une fois, tranquillement
+  setTimeout(()=> jeux.filter(j=>!j.miniature && !j.miniTente).forEach(demanderMiniature), 1500);
   try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
   if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
     navigator.serviceWorker.register("sw.js").catch(()=>{});
