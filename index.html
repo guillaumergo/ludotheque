@@ -79,11 +79,24 @@
   #lecteur{position:fixed;inset:0;background:#000;z-index:50;display:none}
   #lecteur.open{display:block}
   #lecteur iframe{border:0;width:100%;height:100%;display:block;background:#fff}
-  #quitter{position:absolute;top:calc(8px + env(safe-area-inset-top));right:8px;width:52px;height:52px;border-radius:50%;
+  .section{max-width:1200px;margin:26px auto 12px;font-size:21px;display:flex;align-items:center;gap:10px}
+  .section:first-child{margin-top:4px}
+  .section small{font-size:14px;color:var(--muted);font-weight:500}
+  .groupe{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:18px}
+  #grid.sections{display:block}
+  .tile .net{position:absolute;top:10px;left:10px;background:rgba(255,255,255,.95);border-radius:999px;padding:3px 8px;font-size:13px;color:var(--ink);z-index:1}
+  progress{width:100%;height:14px;margin-top:14px;accent-color:var(--accent)}
+  #codeInput{font-size:24px;letter-spacing:3px;text-align:center;text-transform:uppercase}
+  .err{color:var(--danger);min-height:1.3em;margin:8px 0 0}
+  .aide{color:var(--muted);font-size:15px;line-height:1.45;margin:0 0 6px}
+  #quitter{position:absolute;top:calc(8px + env(safe-area-inset-top));left:8px;width:52px;height:52px;border-radius:50%;
            border:0;background:rgba(0,0,0,.35);color:#fff;font-size:22px;cursor:pointer;touch-action:none;
            --p:0deg;background-image:conic-gradient(rgba(255,255,255,.85) var(--p),transparent var(--p))}
   #quitter span{position:absolute;inset:5px;border-radius:50%;background:rgba(30,30,30,.75);display:flex;align-items:center;justify-content:center}
-  #astuce{position:absolute;top:calc(68px + env(safe-area-inset-top));right:8px;background:rgba(0,0,0,.75);color:#fff;
+  #lecteur.droite #quitter{left:auto;right:8px}
+  #lecteur.droite #astuce{left:auto;right:8px}
+  @media (max-width:520px){ .groupe{grid-template-columns:repeat(2,1fr);gap:12px} }
+  #astuce{position:absolute;top:calc(68px + env(safe-area-inset-top));left:8px;background:rgba(0,0,0,.75);color:#fff;
           padding:8px 12px;border-radius:10px;font-size:14px;opacity:0;transition:opacity .3s;pointer-events:none}
   #astuce.show{opacity:1}
   #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;
@@ -102,9 +115,14 @@
   <div class="menu">
     <button class="btn" id="btnMenu" aria-label="Sauvegarde">⋯</button>
     <div class="menu-list" id="menuList">
-      <button id="btnExport">💾 Sauvegarder toute la ludothèque</button>
+      <button id="btnActiver">🔑 Activer ma collection</button>
+      <button id="btnMajColl" hidden>🔄 Mettre à jour la collection</button>
+      <button id="btnMasques" hidden>👁️ Réafficher les jeux masqués</button>
+      <button id="btnQuitterPos">↔️ Bouton quitter : en haut à gauche</button>
+      <button id="btnExport">💾 Sauvegarder mes jeux ajoutés</button>
       <button id="btnImport">📂 Restaurer une sauvegarde</button>
-      <small>La sauvegarde est un seul fichier qui contient tous les jeux : pratique pour changer de tablette ou en équiper une autre.</small>
+      <button id="btnDesactiver" hidden>🚫 Retirer la collection de cet appareil</button>
+      <small>La sauvegarde contient les jeux que tu as ajoutés toi-même. Les jeux de la collection se récupèrent avec le code d'activation.</small>
     </div>
   </div>
 </header>
@@ -154,6 +172,19 @@
   </div>
 </dialog>
 
+<dialog id="dlgCode">
+  <h2>🔑 Activer ma collection</h2>
+  <p class="aide">Tape le code d'activation. Les jeux sont téléchargés une seule fois (environ 20 Mo, en Wi-Fi de préférence), puis ils fonctionnent sans internet.</p>
+  <input type="text" id="codeInput" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="LUDO-XXXX-XXXX">
+  <p class="err" id="codeErr"></p>
+  <progress id="codeProg" max="1" value="0" hidden></progress>
+  <p class="aide" id="codeEtat"></p>
+  <div class="actions"><div class="droite">
+    <button class="btn" id="codeAnnuler">Annuler</button>
+    <button class="btn primary" id="codeOk">Activer</button>
+  </div></div>
+</dialog>
+
 <div id="lecteur">
   <iframe id="cadre" allow="fullscreen; autoplay; camera; microphone; gamepad; screen-wake-lock" allowfullscreen></iframe>
   <button id="quitter" aria-label="Maintenir pour quitter"><span>✕</span></button>
@@ -178,16 +209,20 @@ let dbPromise = null, stockageOK = true;
 function ouvrirDB(){
   return new Promise((res,rej)=>{
     let r;
-    try { r = indexedDB.open("ludotheque",1); } catch(e){ return rej(e); }
-    r.onupgradeneeded = ()=> r.result.createObjectStore("jeux",{keyPath:"id"});
+    try { r = indexedDB.open("ludotheque",2); } catch(e){ return rej(e); }
+    r.onupgradeneeded = ()=>{
+      const db=r.result;
+      if (!db.objectStoreNames.contains("jeux")) db.createObjectStore("jeux",{keyPath:"id"});
+      if (!db.objectStoreNames.contains("reglages")) db.createObjectStore("reglages");
+    };
     r.onsuccess = ()=> res(r.result);
     r.onerror = ()=> rej(r.error);
   });
 }
-function req(mode, action){
+function req(mode, action, store="jeux"){
   return dbPromise.then(db => new Promise((res,rej)=>{
-    const t = db.transaction("jeux",mode);
-    const r = action(t.objectStore("jeux"));
+    const t = db.transaction(store,mode);
+    const r = action(t.objectStore(store));
     t.oncomplete = ()=> res(r ? r.result : undefined);
     t.onerror = ()=> rej(t.error);
     t.onabort = ()=> rej(t.error);
@@ -196,6 +231,9 @@ function req(mode, action){
 const tousLesJeux = ()=> req("readonly", s=>s.getAll());
 const enregistrer = (j)=> req("readwrite", s=>s.put(j));
 const supprimer   = (id)=> req("readwrite", s=>s.delete(id));
+const lireReglage  = (k)=> req("readonly", s=>s.get(k), "reglages");
+const ecrireReglage= (k,v)=> req("readwrite", s=>s.put(v,k), "reglages");
+const effacerReglage=(k)=> req("readwrite", s=>s.delete(k), "reglages");
 
 /* ---------- État ---------- */
 let jeux = [], filtre = "Tous", modeEdition = false, enCours = null;
@@ -210,26 +248,14 @@ function lireTitre(){ try{ return localStorage.getItem("ludo-titre") || "Ma ludo
 function ecrireTitre(v){ try{ localStorage.setItem("ludo-titre",v); }catch(e){} }
 
 /* ---------- Affichage ---------- */
+let ordreCategories = [];   // ordre des catégories de la collection
+const visibles = ()=> jeux.filter(j=>!j.masque);
 function dossiers(){
-  return [...new Set(jeux.map(j=>j.dossier).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"fr"));
+  const ds=[...new Set(visibles().map(j=>j.dossier).filter(Boolean))];
+  const rang=d=>{ const i=ordreCategories.indexOf(d); return i<0?999:i; };
+  return ds.sort((a,b)=> rang(a)-rang(b) || a.localeCompare(b,"fr"));
 }
-function afficher(){
-  $("titre").textContent = lireTitre();
-  document.title = lireTitre();
-  const ds = dossiers();
-  if (filtre!=="Tous" && !ds.includes(filtre)) filtre="Tous";
-  const chips = $("chips"); chips.innerHTML="";
-  if (ds.length){
-    ["Tous",...ds].forEach(d=>{
-      const b=document.createElement("button"); b.className="chip"+(d===filtre?" on":""); b.textContent=d;
-      b.onclick=()=>{filtre=d; afficher();}; chips.appendChild(b);
-    });
-  }
-  $("listeDossiers").innerHTML = ds.map(d=>`<option value="${d.replace(/"/g,"&quot;")}">`).join("");
-  const grid=$("grid"); grid.innerHTML="";
-  const liste = jeux.filter(j=> filtre==="Tous" || j.dossier===filtre)
-                    .sort((a,b)=> (a.ordre??0)-(b.ordre??0));
-  liste.forEach(j=>{
+function tuile(j){
     const b=document.createElement("button"); b.className="tile"; b.style.background=j.couleur;
     if (j.miniature){
       b.classList.add("img");
@@ -241,10 +267,48 @@ function afficher(){
       b.querySelector(".emo").textContent=j.emoji;
     }
     b.querySelector(".nom").textContent=j.nom;
+    if (j.internet){ const n=document.createElement("span"); n.className="net"; n.textContent="🌐 internet"; b.appendChild(n); }
     b.onclick=()=> modeEdition ? ouvrirEdition(j) : jouer(j);
-    grid.appendChild(b);
-  });
-  $("vide").hidden = jeux.length>0 || !stockageOK;
+    return b;
+}
+function afficher(){
+  $("titre").textContent = lireTitre();
+  document.title = lireTitre();
+  const ds = dossiers();
+  if (filtre!=="Tous" && !ds.includes(filtre)) filtre="Tous";
+  const chips = $("chips"); chips.innerHTML="";
+  if (ds.length){
+    ["Tous",...ds].forEach(d=>{
+      const b=document.createElement("button"); b.className="chip"+(d===filtre?" on":""); b.textContent=d;
+      b.onclick=()=>{filtre=d; afficher(); scrollTo(0,0);}; chips.appendChild(b);
+    });
+  }
+  $("listeDossiers").innerHTML = [...new Set([...ordreCategories,...ds])].map(d=>`<option value="${d.replace(/"/g,"&quot;")}">`).join("");
+  const grid=$("grid"); grid.innerHTML="";
+  const tri=(a,b)=> (a.ordre??0)-(b.ordre??0);
+  if (filtre==="Tous" && ds.length){
+    // Vue complète : une section par catégorie, dans l'ordre
+    grid.className="sections";
+    const groupes=[...ds, ""];
+    groupes.forEach(d=>{
+      const liste=visibles().filter(j=>(j.dossier||"")===d).sort(tri);
+      if(!liste.length) return;
+      const h=document.createElement("h2"); h.className="section";
+      h.innerHTML=`<span></span><small></small>`;
+      h.firstChild.textContent = d || "Mes autres jeux";
+      h.lastChild.textContent = liste.length+" jeu"+(liste.length>1?"x":"");
+      const g=document.createElement("div"); g.className="groupe";
+      liste.forEach(j=>g.appendChild(tuile(j)));
+      grid.append(h,g);
+    });
+  } else {
+    grid.className="";
+    visibles().filter(j=> filtre==="Tous" || j.dossier===filtre).sort(tri).forEach(j=>grid.appendChild(tuile(j)));
+  }
+  $("vide").hidden = visibles().length>0 || !stockageOK;
+  const nbMasques = jeux.filter(j=>j.masque).length;
+  $("btnMasques").hidden = !nbMasques;
+  $("btnMasques").textContent = `👁️ Réafficher les jeux masqués (${nbMasques})`;
 }
 
 /* ---------- Ajout de jeux ---------- */
@@ -340,6 +404,7 @@ $("dCapture").onclick = async ()=>{
 };
 function ouvrirEdition(j){
   edite=j; couleurChoisie=j.couleur; miniEdit=j.miniature||null; miniAutoEdit=!!j.miniAuto; majApercu();
+  $("dSupprimer").textContent = j.coll ? "🙈 Masquer" : "🗑️";
   $("fNom").value=j.nom; $("fEmo").value=j.emoji; $("fDossier").value=j.dossier||"";
   $("emoChoix").innerHTML="";
   EMOJIS.forEach(e=>{ const b=document.createElement("button"); b.type="button"; b.textContent=e;
@@ -365,6 +430,11 @@ $("dOk").onclick = async ()=>{
   await enregistrer(edite); $("dlg").close(); afficher();
 };
 $("dSupprimer").onclick = async ()=>{
+  if (edite.coll){
+    if (!confirm(`Masquer « ${edite.nom} » ?\n\nTu pourras le réafficher avec le menu ⋯.`)) return;
+    edite.masque = true; await enregistrer(edite);
+    $("dlg").close(); afficher(); toast("Jeu masqué"); return;
+  }
   if (!confirm(`Retirer « ${edite.nom} » de la ludothèque ?`)) return;
   await supprimer(edite.id); jeux=jeux.filter(j=>j.id!==edite.id);
   $("dlg").close(); afficher(); toast("Jeu retiré");
@@ -452,12 +522,26 @@ $("dTelecharger").onclick = ()=>{
 };
 
 /* ---------- Jouer ---------- */
+/* Le plein écran est géré par la ludothèque : si le jeu le demande, c'est la ludothèque
+   qui passe en plein écran, pour que le bouton « quitter » reste toujours visible. */
+const SCRIPT_JEU = `<script>(function(){try{
+  var pe=function(){try{parent.postMessage("ludo-plein-ecran","*");}catch(e){}return Promise.resolve();};
+  Element.prototype.requestFullscreen=pe;Element.prototype.webkitRequestFullscreen=pe;
+}catch(e){}})();<\/script>`;
+function versionJeu(html){
+  return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, m=>m+SCRIPT_JEU) : SCRIPT_JEU+html;
+}
+function pleinEcranLecteur(){
+  const el=$("lecteur");
+  if (document.fullscreenElement || document.webkitFullscreenElement) return;
+  try{ const p=(el.requestFullscreen||el.webkitRequestFullscreen||(()=>{})).call(el); if(p&&p.catch)p.catch(()=>{}); }catch(e){}
+}
+addEventListener("message", e=>{ if (e.data==="ludo-plein-ecran" && $("lecteur").classList.contains("open")) pleinEcranLecteur(); });
 function jouer(j){
-  enCours = URL.createObjectURL(new Blob([j.html],{type:"text/html"}));
+  enCours = URL.createObjectURL(new Blob([versionJeu(j.html)],{type:"text/html"}));
   $("cadre").src = enCours;
   $("lecteur").classList.add("open");
-  const el=$("lecteur");
-  try{ (el.requestFullscreen||el.webkitRequestFullscreen||(()=>{})).call(el); }catch(e){}
+  pleinEcranLecteur();
   setTimeout(()=>{ try{ $("cadre").focus(); $("cadre").contentWindow.focus(); }catch(e){} },300);
 }
 function quitterJeu(){
@@ -489,8 +573,9 @@ function telecharger(blob, nom){
 $("btnMenu").onclick = (e)=>{ e.stopPropagation(); $("menuList").classList.toggle("open"); };
 addEventListener("click",()=> $("menuList").classList.remove("open"));
 $("btnExport").onclick = ()=>{
-  if(!jeux.length) return toast("Rien à sauvegarder pour l'instant.");
-  const data={format:"ludotheque",version:1,titre:lireTitre(),date:new Date().toISOString(),jeux};
+  const perso = jeux.filter(j=>!j.coll);
+  if(!perso.length) return toast("Aucun jeu ajouté à la main à sauvegarder.");
+  const data={format:"ludotheque",version:1,titre:lireTitre(),date:new Date().toISOString(),jeux:perso};
   const d=new Date().toISOString().slice(0,10);
   telecharger(new Blob([JSON.stringify(data)],{type:"application/json"}),`ludotheque-sauvegarde-${d}.json`);
   toast("Sauvegarde téléchargée");
@@ -509,6 +594,142 @@ async function restaurer(f){
   }catch(e){ toast("Ce fichier n'est pas une sauvegarde de ludothèque."); }
 }
 
+/* ---------- Collection privée (jeux chiffrés, déverrouillés par le code) ---------- */
+const DOSSIER_COLL = "collection/";
+const texte = new TextEncoder();
+const b64enOctets = (s)=> Uint8Array.from(atob(s), c=>c.charCodeAt(0));
+const normaliserCode = (c)=> c.toUpperCase().replace(/[^A-Z0-9]/g,"");
+async function dechiffrer(cle, buf){
+  const b=new Uint8Array(buf);
+  return crypto.subtle.decrypt({name:"AES-GCM", iv:b.slice(0,12)}, cle, b.slice(12));
+}
+async function degzip(buf){
+  const flux = new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return new Response(flux).text();
+}
+async function telecharger_(chemin){
+  const r = await fetch(DOSSIER_COLL+chemin, {cache:"no-store"});
+  if (!r.ok) throw new Error("HTTP "+r.status);
+  return r.arrayBuffer();
+}
+async function cleDepuisCode(code){
+  const info = await (await fetch(DOSSIER_COLL+"cle.json",{cache:"no-store"})).json();
+  const base = await crypto.subtle.importKey("raw", texte.encode(normaliserCode(code)), "PBKDF2", false, ["deriveKey"]);
+  const k = await crypto.subtle.deriveKey({name:"PBKDF2", salt:b64enOctets(info.sel), iterations:info.iterations, hash:"SHA-256"},
+                                          base, {name:"AES-GCM", length:256}, false, ["decrypt"]);
+  let brute;
+  try{ brute = await dechiffrer(k, b64enOctets(info.cle)); }
+  catch(e){ const err=new Error("code"); err.code=true; throw err; }
+  // la clé des jeux est gardée sur l'appareil, non exportable (le code, lui, n'est pas conservé)
+  return crypto.subtle.importKey("raw", brute, {name:"AES-GCM"}, false, ["decrypt"]);
+}
+async function etatCollection(){
+  let cle=null; try{ cle = await lireReglage("cle"); }catch(e){}
+  const actif=!!cle;
+  $("btnActiver").hidden = actif; $("btnMajColl").hidden = !actif; $("btnDesactiver").hidden = !actif;
+  return actif;
+}
+let majEnCours = false;
+async function majCollection(silencieux, cle, progression){
+  if (majEnCours) return; majEnCours = true;
+  try{
+    cle = cle || await lireReglage("cle");
+    if (!cle) return;
+    const cat = JSON.parse(await degzip(await dechiffrer(cle, await telecharger_("catalogue.bin"))));
+    ordreCategories = cat.categories || [];
+    await ecrireReglage("categories", ordreCategories);
+    const parId = new Map(jeux.filter(j=>j.coll).map(j=>[j.id,j]));
+    const aFaire = cat.jeux.filter(e=>{ const j=parId.get("c:"+e.id); return !j || j.coll.empreinte!==e.empreinte || !j.html; });
+    const total = aFaire.reduce((s,e)=>s+e.taille,0); let fait=0, nouveaux=0, majs=0;
+    for (const e of aFaire){
+      if (progression) progression(fait/total, e.nom);
+      const html = await degzip(await dechiffrer(cle, await telecharger_(e.fichier)));
+      const ancien = parId.get("c:"+e.id);
+      const meta = {nom:e.nom, emoji:e.emoji, couleur:e.couleur, dossier:e.categorie, miniature:e.miniature||null};
+      let j;
+      if (ancien){
+        j = ancien;
+        // on ne remplace que ce que l'utilisateur n'a pas personnalisé
+        for (const k in meta){ if (j[k] === (j.coll.meta||{})[k]) j[k]=meta[k]; }
+        majs++;
+      } else {
+        j = Object.assign({id:"c:"+e.id, ordre:cat.jeux.indexOf(e), ajout:Date.now(), miniTente:true}, meta);
+        jeux.push(j); nouveaux++;
+      }
+      j.html = html; j.internet = !!e.internet; j.miniAuto = false; j.miniTente = true;
+      j.coll = {empreinte:e.empreinte, meta};
+      await enregistrer(j);
+      fait += e.taille;
+    }
+    // Jeux retirés de la collection
+    const ids = new Set(cat.jeux.map(e=>"c:"+e.id)); let retires=0;
+    for (const j of jeux.filter(j=>j.coll && !ids.has(j.id))){ await supprimer(j.id); retires++; }
+    if (retires) jeux = jeux.filter(j=>!j.coll || ids.has(j.id));
+    if (progression) progression(1, "");
+    afficher();
+    const msg=[nouveaux?`${nouveaux} nouveau${nouveaux>1?"x":""} jeu${nouveaux>1?"x":""}`:"", majs?`${majs} mis à jour`:"", retires?`${retires} retiré${retires>1?"s":""}`:""].filter(Boolean).join(" · ");
+    if (msg) toast("Collection : "+msg); else if (!silencieux) toast("La collection est déjà à jour");
+  }catch(e){
+    if (!silencieux) toast("Mise à jour impossible pour l'instant (pas d'internet ?)");
+    if (progression) throw e;
+  }finally{ majEnCours=false; }
+}
+$("btnActiver").onclick = ()=>{
+  if (!stockageOK) return toast("Enregistrement impossible ici (voir le message en haut).");
+  $("codeErr").textContent=""; $("codeEtat").textContent=""; $("codeProg").hidden=true;
+  $("codeOk").disabled=false; $("codeInput").value=""; $("dlgCode").showModal(); $("codeInput").focus();
+};
+$("codeAnnuler").onclick = ()=>{ if(!majEnCours) $("dlgCode").close(); };
+$("codeInput").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); $("codeOk").click(); } });
+$("codeOk").onclick = async ()=>{
+  const code=$("codeInput").value;
+  if (normaliserCode(code).length<6){ $("codeErr").textContent="Le code est trop court."; return; }
+  if (!navigator.onLine){ $("codeErr").textContent="Il faut internet pour l'activation (une seule fois)."; return; }
+  $("codeErr").textContent=""; $("codeOk").disabled=true; $("codeEtat").textContent="Vérification du code…";
+  let cle;
+  try{ cle = await cleDepuisCode(code); }
+  catch(e){
+    $("codeOk").disabled=false;
+    $("codeEtat").textContent="";
+    $("codeErr").textContent = e.code ? "Code incorrect. Vérifie les lettres et les chiffres." : "Connexion impossible. Réessaie avec internet.";
+    return;
+  }
+  await ecrireReglage("cle", cle);
+  try{ if(navigator.storage && navigator.storage.persist) await navigator.storage.persist(); }catch(e){}
+  $("codeProg").hidden=false;
+  try{
+    await majCollection(false, cle, (p,nom)=>{ $("codeProg").value=p; $("codeEtat").textContent = nom ? `Téléchargement… ${Math.round(p*100)} % (${nom})` : "Terminé !"; });
+    await etatCollection();
+    setTimeout(()=> $("dlgCode").close(), 700);
+  }catch(e){
+    $("codeOk").disabled=false;
+    $("codeErr").textContent="Le téléchargement s'est arrêté. Appuie à nouveau sur Activer pour reprendre.";
+  }
+};
+$("btnMajColl").onclick = ()=>{ toast("Recherche de nouveautés…"); majCollection(false); };
+$("btnMasques").onclick = async ()=>{
+  for (const j of jeux.filter(j=>j.masque)){ j.masque=false; await enregistrer(j); }
+  afficher(); toast("Tous les jeux sont réaffichés");
+};
+$("btnDesactiver").onclick = async ()=>{
+  if (!confirm("Retirer tous les jeux de la collection de cet appareil ?\n\nTes jeux ajoutés à la main sont gardés. Il faudra le code pour les retrouver.")) return;
+  for (const j of jeux.filter(j=>j.coll)) await supprimer(j.id);
+  jeux = jeux.filter(j=>!j.coll);
+  await effacerReglage("cle"); await etatCollection(); afficher(); toast("Collection retirée de cet appareil");
+};
+
+/* Position du bouton « quitter » pendant le jeu (certains jeux ont leurs réglages en haut à droite) */
+function lirePos(){ try{ return localStorage.getItem("ludo-quitter")==="droite"?"droite":"gauche"; }catch(e){ return "gauche"; } }
+function majPositionQuitter(){
+  const d = lirePos()==="droite";
+  $("lecteur").classList.toggle("droite", d);
+  $("btnQuitterPos").textContent = "↔️ Bouton quitter : en haut à " + (d?"droite":"gauche");
+}
+$("btnQuitterPos").onclick = ()=>{
+  try{ localStorage.setItem("ludo-quitter", lirePos()==="droite"?"gauche":"droite"); }catch(e){}
+  majPositionQuitter();
+};
+
 /* ---------- Démarrage ---------- */
 (async function(){
   dbPromise = ouvrirDB();
@@ -519,7 +740,10 @@ async function restaurer(f){
     const b=$("bandeau"); b.style.display="block";
     b.innerHTML="⚠️ Ce navigateur ne permet pas d'enregistrer des jeux quand la ludothèque est ouverte de cette façon. Ouvre-la plutôt depuis son adresse web (version installée), elle fonctionnera ensuite hors ligne.";
   }
+  try{ ordreCategories = (await lireReglage("categories")) || []; }catch(e){}
   afficher();
+  majPositionQuitter();
+  if (stockageOK) etatCollection().then(actif=>{ if(actif && navigator.onLine) majCollection(true); });
   // Jeux déjà présents sans miniature : on les photographie une fois, tranquillement
   setTimeout(()=> jeux.filter(j=>!j.miniature && !j.miniTente).forEach(demanderMiniature), 1500);
   try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}

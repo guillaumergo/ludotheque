@@ -1,5 +1,5 @@
 // Garde la ludothèque disponible hors ligne une fois ouverte une première fois.
-const CACHE = "ludotheque-v2";
+const CACHE = "ludotheque-v3";
 const FICHIERS = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./html2canvas.min.js"];
 
 self.addEventListener("install", (e) => {
@@ -19,6 +19,8 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
+  // Les jeux de la collection sont déjà gardés dans la ludothèque : pas de double copie
+  if (new URL(req.url).pathname.includes("/collection/")) return;
   e.respondWith(
     caches.open(CACHE).then(async (c) => {
       const enCache = await c.match(req, { ignoreSearch: true });
