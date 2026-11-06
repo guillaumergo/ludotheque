@@ -14,6 +14,11 @@ Utilisation :
 
   Pour retrouver la liste actuelle (avec le code) :
   python3 outils/construire_collection.py --code CODE --exporter-liste liste.json
+
+  Pour ajouter des jeux sans avoir les sources de tous les autres :
+  ajouter --garder-existants ; un jeu de la liste sans fichier dans DOSSIER_DES_JEUX
+  garde alors sa version chiffrée actuelle (et sa miniature).
+  Variable LUDO_CHROME : chemin d'un Chrome à utiliser pour les miniatures.
 """
 import argparse, base64, gzip, hashlib, json, os, re, secrets, sys, time
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -78,7 +83,8 @@ def miniature(html, cache):
         tmp = os.path.join(cache, "_jeu.html")
         open(tmp, "w").write(html)
         with sync_playwright() as p:
-            nav = p.chromium.launch(args=["--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--autoplay-policy=no-user-gesture-required"])
+            chrome = os.environ.get("LUDO_CHROME")
+            nav = p.chromium.launch(executable_path=chrome or None, args=["--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--autoplay-policy=no-user-gesture-required"])
             page = nav.new_page(viewport={"width": 960, "height": 600})
             page.add_init_script("window.alert=()=>{};window.confirm=()=>false;window.prompt=()=>null;")
             try:
@@ -102,6 +108,7 @@ def main():
     ap.add_argument("--three")
     ap.add_argument("--miniatures")
     ap.add_argument("--exporter-liste")
+    ap.add_argument("--garder-existants", action="store_true")
     a = ap.parse_args()
 
     cle = cle_des_jeux(a.code)
@@ -122,7 +129,16 @@ def main():
         os.makedirs(a.miniatures, exist_ok=True)
 
     garder, entrees = set(), []
+    anciens = {e["id"]: e for e in (ancien or {}).get("jeux", [])}
     for j in liste["jeux"]:
+        source = os.path.join(a.sources, j["id"], "index.html")
+        if a.garder_existants and not os.path.exists(source) and j["id"] in anciens:
+            e = anciens[j["id"]]
+            e = dict(j, fichier=e["fichier"], taille=e["taille"], empreinte=e["empreinte"],
+                     **({"miniature": e["miniature"]} if e.get("miniature") else {}))
+            garder.add(os.path.basename(e["fichier"]))
+            entrees.append(e)
+            continue
         html = preparer_html(open(os.path.join(a.sources, j["id"], "index.html"), encoding="utf-8").read(), three)
         donnees = html.encode("utf-8")
         empreinte = hashlib.sha256(donnees).hexdigest()[:12]
