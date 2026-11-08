@@ -90,13 +90,14 @@
   .err{color:var(--danger);min-height:1.3em;margin:8px 0 0}
   .aide{color:var(--muted);font-size:15px;line-height:1.45;margin:0 0 6px}
   #quitter{position:absolute;top:calc(8px + env(safe-area-inset-top));left:8px;width:52px;height:52px;border-radius:50%;
-           border:0;background:rgba(0,0,0,.35);color:#fff;font-size:22px;cursor:pointer;touch-action:none;
-           --p:0deg;background-image:conic-gradient(rgba(255,255,255,.85) var(--p),transparent var(--p))}
+           border:0;background:rgba(0,0,0,.35);color:#fff;font-size:22px;cursor:pointer;touch-action:none;z-index:2}
+  #quitterPoints{position:absolute;top:calc(64px + env(safe-area-inset-top));left:8px;width:52px;display:flex;justify-content:center;gap:5px;
+           pointer-events:none;z-index:2}
+  #quitterPoints i{width:12px;height:12px;border-radius:50%;background:rgba(0,0,0,.4);border:2px solid #fff}
+  #quitterPoints i.on{background:#ffd23f}
   #quitter span{position:absolute;inset:5px;border-radius:50%;background:rgba(30,30,30,.75);display:flex;align-items:center;justify-content:center}
-  #lecteur.droite #quitter{left:auto;right:8px}
-  #lecteur.droite #astuce{left:auto;right:8px}
   @media (max-width:520px){ .groupe{grid-template-columns:repeat(2,1fr);gap:12px} }
-  #astuce{position:absolute;top:calc(68px + env(safe-area-inset-top));left:8px;background:rgba(0,0,0,.75);color:#fff;
+  #astuce{position:absolute;top:calc(84px + env(safe-area-inset-top));left:8px;background:rgba(0,0,0,.75);color:#fff;
           padding:8px 12px;border-radius:10px;font-size:14px;opacity:0;transition:opacity .3s;pointer-events:none}
   #astuce.show{opacity:1}
   #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;
@@ -118,7 +119,6 @@
       <button id="btnActiver">🔑 Activer ma collection</button>
       <button id="btnMajColl" hidden>🔄 Mettre à jour la collection</button>
       <button id="btnMasques" hidden>👁️ Réafficher les jeux masqués</button>
-      <button id="btnQuitterPos">↔️ Bouton quitter : en haut à gauche</button>
       <button id="btnExport">💾 Sauvegarder mes jeux ajoutés</button>
       <button id="btnImport">📂 Restaurer une sauvegarde</button>
       <button id="btnDesactiver" hidden>🚫 Retirer la collection de cet appareil</button>
@@ -187,8 +187,9 @@
 
 <div id="lecteur">
   <iframe id="cadre" allow="fullscreen; autoplay; camera; microphone; gamepad; screen-wake-lock" allowfullscreen></iframe>
-  <button id="quitter" aria-label="Maintenir pour quitter"><span>✕</span></button>
-  <div id="astuce">Maintenir pour quitter</div>
+  <button id="quitter" aria-label="Toucher 3 fois pour quitter"><span>✕</span></button>
+  <div id="quitterPoints" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div id="astuce">Touche 3 fois pour quitter</div>
 </div>
 <div id="toast"></div>
 <div id="drop">Dépose les jeux ici</div>
@@ -550,18 +551,23 @@ function quitterJeu(){
   $("lecteur").classList.remove("open");
   try{ if(document.fullscreenElement) document.exitFullscreen(); }catch(e){}
 }
-/* Bouton « maintenir pour quitter » : évite qu'un enfant ferme le jeu par erreur */
+/* Bouton « quitter » : 3 appuis rapprochés, pour qu'un enfant ne ferme pas le jeu par erreur.
+   Toujours en haut à gauche : le logo des paramètres ARCADIA est en haut à droite dans les jeux. */
 (function(){
-  const b=$("quitter"); let t0=0, raf=0; const DUREE=1000;
-  function tick(){ const p=Math.min(1,(performance.now()-t0)/DUREE);
-    b.style.setProperty("--p",(p*360)+"deg");
-    if(p>=1){ arreter(); quitterJeu(); } else raf=requestAnimationFrame(tick); }
-  function arreter(){ cancelAnimationFrame(raf); b.style.setProperty("--p","0deg"); }
-  b.addEventListener("pointerdown",e=>{ e.preventDefault(); t0=performance.now(); raf=requestAnimationFrame(tick);
-    $("astuce").classList.add("show"); clearTimeout(b.h); b.h=setTimeout(()=>$("astuce").classList.remove("show"),1800); });
-  ["pointerup","pointerleave","pointercancel"].forEach(ev=>b.addEventListener(ev,arreter));
+  const b=$("quitter"), pts=[...$("quitterPoints").children]; let appuis=[], tm=0;
+  function montrer(n){ pts.forEach((p,i)=>p.classList.toggle("on", i<n)); }
+  b.addEventListener("pointerdown",e=>{ e.preventDefault();
+    const t=performance.now(); appuis=appuis.filter(x=>t-x<1500); appuis.push(t); montrer(appuis.length);
+    $("astuce").classList.add("show"); clearTimeout(tm);
+    tm=setTimeout(()=>{ $("astuce").classList.remove("show"); appuis=[]; montrer(0); },1600);
+    if(appuis.length>=3){ appuis=[]; montrer(0); $("astuce").classList.remove("show"); quitterJeu(); } });
+  b.addEventListener("click",e=>{ if(e.detail===0) quitterJeu(); });
   b.addEventListener("contextmenu",e=>e.preventDefault());
 })();
+/* « Quitter le jeu » depuis le panneau de paramètres ARCADIA du jeu */
+addEventListener("message", e=>{
+  if (e.data==="ludo-quitter" && $("lecteur").classList.contains("open") && e.source===$("cadre").contentWindow) quitterJeu();
+});
 addEventListener("keydown",e=>{ if(e.key==="Escape" && $("lecteur").classList.contains("open") && !document.fullscreenElement) quitterJeu(); });
 
 /* ---------- Sauvegarde ---------- */
@@ -718,18 +724,6 @@ $("btnDesactiver").onclick = async ()=>{
   await effacerReglage("cle"); await etatCollection(); afficher(); toast("Collection retirée de cet appareil");
 };
 
-/* Position du bouton « quitter » pendant le jeu (certains jeux ont leurs réglages en haut à droite) */
-function lirePos(){ try{ return localStorage.getItem("ludo-quitter")==="droite"?"droite":"gauche"; }catch(e){ return "gauche"; } }
-function majPositionQuitter(){
-  const d = lirePos()==="droite";
-  $("lecteur").classList.toggle("droite", d);
-  $("btnQuitterPos").textContent = "↔️ Bouton quitter : en haut à " + (d?"droite":"gauche");
-}
-$("btnQuitterPos").onclick = ()=>{
-  try{ localStorage.setItem("ludo-quitter", lirePos()==="droite"?"gauche":"droite"); }catch(e){}
-  majPositionQuitter();
-};
-
 /* ---------- Démarrage ---------- */
 (async function(){
   dbPromise = ouvrirDB();
@@ -742,7 +736,6 @@ $("btnQuitterPos").onclick = ()=>{
   }
   try{ ordreCategories = (await lireReglage("categories")) || []; }catch(e){}
   afficher();
-  majPositionQuitter();
   if (stockageOK) etatCollection().then(actif=>{ if(actif && navigator.onLine) majCollection(true); });
   // Jeux déjà présents sans miniature : on les photographie une fois, tranquillement
   setTimeout(()=> jeux.filter(j=>!j.miniature && !j.miniTente).forEach(demanderMiniature), 1500);

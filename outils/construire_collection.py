@@ -21,6 +21,9 @@ Utilisation :
   déjà publié n'est retiré : ceux qui manquent dans la liste sont conservés.
   Pour retirer un jeu, construire sans --garder-existants.
   Variable LUDO_CHROME : chemin d'un Chrome à utiliser pour les miniatures.
+
+  Menu de paramètres ARCADIA : un jeu qui contient  <script data-arcadia></script>
+  reçoit à cet endroit le module commun/arcadia.js (logo compris), puis appelle Arcadia.init().
 """
 import argparse, base64, gzip, hashlib, json, os, re, secrets, sys, time
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -71,9 +74,22 @@ def lire_catalogue(cle):
         return None
     return json.loads(gzip.decompress(dechiffrer(cle, open(chemin, "rb").read())))
 
+ARCADIA_BALISE = re.compile(r'<script\s+data-arcadia\s*>\s*</script>')
+
+def module_arcadia():
+    """Menu de paramètres commun (commun/arcadia.js) avec le logo intégré."""
+    dossier = os.path.join(RACINE, "commun")
+    js = open(os.path.join(dossier, "arcadia.js"), encoding="utf-8").read()
+    logo = b64(open(os.path.join(dossier, "arcadia-logo.webp"), "rb").read())
+    js = js.replace("__ARCADIA_LOGO__", "data:image/webp;base64," + logo)
+    return re.sub(r"</(script)", r"<\\/\1", js, flags=re.I)  # ne doit pas fermer la balise
+
 def preparer_html(html, three):
     if three and THREE_CDN.search(html):
         html = THREE_CDN.sub(lambda m: "<script>" + three + "</script>", html)
+    if ARCADIA_BALISE.search(html):
+        js = module_arcadia()
+        html = ARCADIA_BALISE.sub(lambda m: "<script>" + js + "</script>", html, count=1)
     return html
 
 def miniature(html, cache):
