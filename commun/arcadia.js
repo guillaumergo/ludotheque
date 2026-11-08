@@ -20,7 +20,8 @@
  *   - logo en haut à droite, 3 appuis pour ouvrir le panneau (pas d'appui long) ;
  *   - plein écran automatique au premier appui ;
  *   - « Ignorer les appuis trop rapprochés » (délai réglable) ;
- *   - contacteurs : un par fonction, un seul avec balayage, un seul au hasard,
+ *   - contacteurs : un par fonction, un seul avec balayage (continu, ou lancé par un
+ *     premier appui puis validé par un second), un seul au hasard,
  *     chaque contacteur étant détecté (touche, clic gauche ou clic droit) ;
  *   - bouton pause pour les jeux qui le demandent ;
  *   - Réinitialiser et Quitter le jeu (dans la ludothèque).
@@ -32,7 +33,7 @@ if (window.Arcadia) return;
 var LOGO = "__ARCADIA_LOGO__";
 var DANS_LUDO = window.parent !== window;
 var CLE_COMMUN = "arcadia-commun";
-var DEFAUT = { rapproche:false, delai:1, contacteur:false, mode:"balayage", vitesse:2, unique:null };
+var DEFAUT = { rapproche:false, delai:1, contacteur:false, mode:"balayage", vitesse:2, demarrage:"auto", unique:null };
 
 function lire(k){ try{ return JSON.parse(localStorage.getItem(k) || "null"); }catch(e){ return null; } }
 function ecrire(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
@@ -183,7 +184,17 @@ function entreeContacteur(e){
   liste = cibles();
   if (!liste.length) return true;
   if (mode === "hasard") activer(liste[Math.floor(Math.random() * liste.length)]);
-  else { var el = liste[balayage.pos % liste.length]; activer(el); balayage.relancer(); }
+  else if (C.demarrage === "appui" && balayage.attente){
+    /* Balayage à deux appuis : le premier appui lance le balayage… */
+    balayage.attente = false; balayage.pos = 0; balayage.relancer();
+  } else {
+    /* … le second valide le bouton encadré */
+    var el = liste[balayage.pos % liste.length]; activer(el);
+    if (C.demarrage === "appui"){
+      balayage.attente = true; clearInterval(balayage.minuteur); balayage.minuteur = null;
+      setTimeout(balayage.relancer, 600);
+    } else balayage.relancer();
+  }
   return true;
 }
 function memeEntreeActive(e){
@@ -193,17 +204,20 @@ function memeEntreeActive(e){
 
 /* ---------- Balayage ---------- */
 var balayage = {
-  pos:0, minuteur:null,
+  pos:0, minuteur:null, attente:true, pasFaits:0,
   actif:function(){ return C.contacteur && C.mode === "balayage" && C.unique && !A.ouvert && !A.enPause; },
   pas:function(){
     var liste = cibles();
     if (!balayage.actif() || !liste.length){ surbrillance(null); return; }
     balayage.pos = (balayage.pos + 1) % liste.length;
+    /* À deux appuis : sans validation après 3 tours, le balayage s'arrête et attend */
+    if (C.demarrage === "appui" && ++balayage.pasFaits >= 3 * liste.length){ balayage.attente = true; balayage.relancer(); return; }
     surbrillance(liste[balayage.pos]);
   },
   relancer:function(){
     clearInterval(balayage.minuteur); balayage.minuteur = null;
-    if (!balayage.actif()){ surbrillance(null); return; }
+    balayage.pasFaits = 0;
+    if (!balayage.actif() || (C.demarrage === "appui" && balayage.attente)){ surbrillance(null); return; }
     var liste = cibles(); if (balayage.pos >= liste.length) balayage.pos = 0;
     surbrillance(liste[balayage.pos]);
     balayage.minuteur = setInterval(balayage.pas, C.vitesse * 1000);
@@ -425,7 +439,7 @@ function dessinerPanneau(){
     offerts.forEach(function(m){
       var lab = h("label"); var r = h("input", { type:"radio", name:"arcadia-mode", value:m });
       r.checked = C.mode === m;
-      r.addEventListener("change", function(){ C.mode = m; sauver(); remplirMode(); });
+      r.addEventListener("change", function(){ C.mode = m; balayage.attente = true; sauver(); remplirMode(); });
       lab.append(r, document.createTextNode(TXT[m])); modes.appendChild(lab);
     });
     var zone = h("div", { "class":"detail", style:"margin-left:0" });
@@ -442,9 +456,21 @@ function dessinerPanneau(){
         zone.appendChild(h("p", { "class":"aide" }, "Pour chaque bouton : appuie sur « Détecter », puis sur le contacteur à lui associer."));
       } else {
         detecteur(zone, "Contacteur", function(){ return C.unique; }, function(x){ C.unique = x; });
-        if (C.mode === "balayage") curseur(zone, "Vitesse", .5, 5, .5, "vitesse", "s");
+        if (C.mode === "balayage"){
+          curseur(zone, "Vitesse", .5, 5, .5, "vitesse", "s");
+          var dem = h("div", { "class":"modes", role:"radiogroup", "aria-label":"Démarrage du balayage" });
+          [["auto","Balayage continu : un appui valide"],["appui","Deux appuis : le 1er lance le balayage, le 2e valide"]].forEach(function(o){
+            var lab = h("label"), r = h("input", { type:"radio", name:"arcadia-demarrage", value:o[0] });
+            r.checked = C.demarrage === o[0];
+            r.addEventListener("change", function(){ C.demarrage = o[0]; balayage.attente = true; sauver(); remplirMode(); });
+            lab.append(r, document.createTextNode(o[1])); dem.appendChild(lab);
+          });
+          zone.appendChild(dem);
+        }
         zone.appendChild(h("p", { "class":"aide" }, C.mode === "balayage"
-          ? "Un cadre jaune passe d'un bouton à l'autre ; un appui sur le contacteur déclenche le bouton encadré."
+          ? (C.demarrage === "appui"
+            ? "Un premier appui fait apparaître le cadre jaune, qui passe d'un bouton à l'autre ; un second appui déclenche le bouton encadré. Le balayage s'arrête ensuite et attend. Sans réponse après 3 tours, il s'arrête aussi."
+            : "Un cadre jaune passe d'un bouton à l'autre en continu ; un appui sur le contacteur déclenche le bouton encadré.")
           : "Chaque appui sur le contacteur déclenche un bouton choisi au hasard."));
       }
     }
