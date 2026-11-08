@@ -12,8 +12,11 @@
  *        ceJeu: element,                  // réglages propres au jeu (déplacés dans le panneau)
  *        activer: (el, i) => {},          // optionnel : comment déclencher une cible
  *        pause: { visible: () => true, changer: (enPause) => {} }, // optionnel
- *        ouvrir: () => {}, fermer: () => {}, reinitialiser: () => {}   // optionnels
+ *        ouvrir: () => {}, fermer: () => {}, reinitialiser: () => {},  // optionnels
+ *        occupe: () => false   // optionnel : vrai quand une fenêtre du jeu (fiche, cadrage
+ *                              // photo…) est ouverte ; contacteurs et balayage s'arrêtent
  *      });
+ *   Les fenêtres propres au jeu portent l'attribut data-arcadia-ui pour rester utilisables.
  *   Arcadia.ouvert vaut true quand le panneau est affiché.
  *
  * Ce que fait le module, pour tous les jeux :
@@ -113,7 +116,8 @@ function accepte(){
   if (C.rapproche && t - dernier < C.delai * 1000) return false;
   dernier = t; return true;
 }
-function ecranContacteur(){ return C.contacteur && C.ecran && C.mode !== "fonction" && !A.ouvert && !A.enPause; }
+function occupe(){ try{ return !!(cfg.occupe && cfg.occupe()); }catch(e){ return false; } }
+function ecranContacteur(){ return C.contacteur && C.ecran && C.mode !== "fonction" && !A.ouvert && !A.enPause && !occupe(); }
 var gesteEcran = false;
 function filtreEcran(e){
   if (synth || dansUI(e.target)) return;
@@ -152,7 +156,7 @@ addEventListener("keydown", function(e){
     if (e.key === "Escape"){ stop(e); fermer(); }
     return;
   }
-  if (C.contacteur && entreeContacteur(e)){ stop(e); return; }
+  if (C.contacteur && !dansUI(e.target) && !occupe() && entreeContacteur(e)){ stop(e); return; }
   if (C.rapproche && !dansUI(e.target)){
     if (e.repeat || !accepte()) stop(e);
   }
@@ -165,7 +169,7 @@ function filtreSouris(e){
   if (synth) return;
   /* Pendant la détection, n'importe quel clic de souris compte (le contacteur clique là où est
      le pointeur, souvent sur le panneau), sauf sur le bouton « Détecter » lui-même. */
-  if (detection && e.pointerType === "mouse" && e.type === "pointerdown" && !(e.target.closest && e.target.closest(".ecoute"))){
+  if (detection && e.pointerType === "mouse" && e.type === "pointerdown" && !(e.target.closest && e.target.closest(".a-ecoute"))){
     stop(e); detection.fin({ type:"souris", bouton:e.button }); return;
   }
   /* Fin d'un appui de contacteur souris : on avale le relâchement et le clic */
@@ -174,7 +178,7 @@ function filtreSouris(e){
     if (e.type === "click" || e.type === "contextmenu" || e.type === "auxclick") avale = null;
     return;
   }
-  if (A.ouvert || !C.contacteur || dansUI(e.target)) return;
+  if (A.ouvert || !C.contacteur || dansUI(e.target) || occupe()) return;
   if (e.type === "pointerdown" && e.pointerType === "mouse" && entreeContacteur(e)){ stop(e); return; }
 }
 ["pointerdown","mousedown","pointerup","mouseup","click","auxclick","contextmenu"].forEach(function(ev){
@@ -225,7 +229,7 @@ function memeEntreeActive(e){
 /* ---------- Balayage ---------- */
 var balayage = {
   pos:0, minuteur:null, attente:true, pasFaits:0,
-  actif:function(){ return C.contacteur && C.mode === "balayage" && (C.unique || C.ecran) && !A.ouvert && !A.enPause; },
+  actif:function(){ return C.contacteur && C.mode === "balayage" && (C.unique || C.ecran) && !A.ouvert && !A.enPause && !occupe(); },
   pas:function(){
     var liste = cibles();
     if (!balayage.actif() || !liste.length){ surbrillance(null); return; }
@@ -296,31 +300,31 @@ var CSS = '\
 #arcadia-panneau .a-entete p{margin:2px 0 0;font-size:16px;color:#5b6475}\
 #arcadia-panneau .a-section{margin:0;padding:10px 20px 14px;border-top:2px solid #ece4d3}\
 #arcadia-panneau h3{margin:4px 0 10px;font-size:15px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#b4692b}\
-#arcadia-panneau .opt{margin:0 0 10px}\
-#arcadia-panneau .case{display:flex;align-items:center;gap:12px;min-height:48px;font-size:18px;cursor:pointer}\
-#arcadia-panneau .case input{width:28px;height:28px;accent-color:#1e3f86;flex:none;margin:0}\
-#arcadia-panneau .detail{margin:4px 0 6px 18px;padding:10px 14px;border-left:4px solid #e8954a;background:#fff;border-radius:0 12px 12px 0;display:flex;flex-direction:column;gap:10px}\
-#arcadia-panneau .ligne{display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:17px}\
-#arcadia-panneau .ligne b{font-weight:600}\
+#arcadia-panneau .a-opt{margin:0 0 10px}\
+#arcadia-panneau .a-case{display:flex;align-items:center;gap:12px;min-height:48px;font-size:18px;cursor:pointer}\
+#arcadia-panneau .a-case input{width:28px;height:28px;accent-color:#1e3f86;flex:none;margin:0}\
+#arcadia-panneau .a-detail{margin:4px 0 6px 18px;padding:10px 14px;border-left:4px solid #e8954a;background:#fff;border-radius:0 12px 12px 0;display:flex;flex-direction:column;gap:10px}\
+#arcadia-panneau .a-ligne{display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:17px}\
+#arcadia-panneau .a-ligne b{font-weight:600}\
 #arcadia-panneau input[type=range]{flex:1;min-width:140px;height:32px;accent-color:#1e3f86}\
-#arcadia-panneau .val{min-width:62px;font-weight:700;font-variant-numeric:tabular-nums}\
-#arcadia-panneau .modes{display:flex;flex-direction:column;gap:6px}\
-#arcadia-panneau .modes label{display:flex;align-items:center;gap:10px;min-height:44px;font-size:17px;padding:4px 10px;border:2px solid #e4dccb;border-radius:12px;background:#fbf8f1;cursor:pointer}\
-#arcadia-panneau .modes input{width:24px;height:24px;accent-color:#1e3f86;margin:0}\
-#arcadia-panneau .modes label:has(input:checked){border-color:#1e3f86;background:#eef3ff}\
-#arcadia-panneau .entree{flex:1;min-width:120px;font-weight:600}\
-#arcadia-panneau .entree.vide{color:#9a8f7a;font-weight:500}\
-#arcadia-panneau button.bt{height:46px;padding:0 18px;border-radius:12px;border:0;background:#e9dfcb;color:#1d2a44;font:inherit;font-size:17px;font-weight:600;cursor:pointer}\
-#arcadia-panneau button.bt.ecoute{background:#e8954a;color:#fff}\
-#arcadia-panneau button.bt:focus-visible{outline:3px solid #1e3f86;outline-offset:2px}\
-#arcadia-panneau .aide{margin:0;font-size:15px;color:#5b6475;line-height:1.35}\
-#arcadia-panneau .vide-jeu{margin:0;font-size:16px;color:#5b6475}\
+#arcadia-panneau .a-val{min-width:62px;font-weight:700;font-variant-numeric:tabular-nums}\
+#arcadia-panneau .a-modes{display:flex;flex-direction:column;gap:6px}\
+#arcadia-panneau .a-modes label{display:flex;align-items:center;gap:10px;min-height:44px;font-size:17px;padding:4px 10px;border:2px solid #e4dccb;border-radius:12px;background:#fbf8f1;cursor:pointer}\
+#arcadia-panneau .a-modes input{width:24px;height:24px;accent-color:#1e3f86;margin:0}\
+#arcadia-panneau .a-modes label:has(input:checked){border-color:#1e3f86;background:#eef3ff}\
+#arcadia-panneau .a-entree{flex:1;min-width:120px;font-weight:600}\
+#arcadia-panneau .a-entree.vide{color:#9a8f7a;font-weight:500}\
+#arcadia-panneau button.a-bt{height:46px;padding:0 18px;border-radius:12px;border:0;background:#e9dfcb;color:#1d2a44;font:inherit;font-size:17px;font-weight:600;cursor:pointer}\
+#arcadia-panneau button.a-bt.a-ecoute{background:#e8954a;color:#fff}\
+#arcadia-panneau button.a-bt:focus-visible{outline:3px solid #1e3f86;outline-offset:2px}\
+#arcadia-panneau .a-aide{margin:0;font-size:15px;color:#5b6475;line-height:1.35}\
+#arcadia-panneau .a-vide-jeu{margin:0;font-size:16px;color:#5b6475}\
 #arcadia-panneau .a-pied{margin:0;display:flex;flex-wrap:wrap;gap:10px;padding:14px 20px 18px;border-top:2px solid #ece4d3;align-items:center}\
-#arcadia-panneau .a-pied .esp{flex:1}\
-#arcadia-panneau .a-pied .quitter{background:#f6d9d4;color:#8c2318}\
-#arcadia-panneau .a-pied .fermer{background:#1e3f86;color:#fff;padding:0 30px;font-size:19px}\
-#arcadia-panneau .ce-jeu{font-size:17px}\
-@media (max-width:480px){#arcadia-panneau .a-pied .esp{display:none}#arcadia-panneau .a-pied button{flex:1 1 auto}}\
+#arcadia-panneau .a-pied .a-esp{flex:1}\
+#arcadia-panneau .a-pied .a-quitter{background:#f6d9d4;color:#8c2318}\
+#arcadia-panneau .a-pied .a-fermer{background:#1e3f86;color:#fff;padding:0 30px;font-size:19px}\
+#arcadia-panneau .a-ce-jeu{font-size:17px}\
+@media (max-width:480px){#arcadia-panneau .a-pied .a-esp{display:none}#arcadia-panneau .a-pied button{flex:1 1 auto}}\
 ';
 
 function h(tag, attrs, html){
@@ -398,39 +402,39 @@ function fermer(){
 function sauver(){ ecrire(CLE_COMMUN, C); if (cfg.id) ecrire("arcadia-jeu-" + cfg.id, J); }
 
 function caseDepliable(parent, libelle, cle, remplir){
-  var bloc = h("div", { "class":"opt" });
-  var lab = h("label", { "class":"case" });
+  var bloc = h("div", { "class":"a-opt" });
+  var lab = h("label", { "class":"a-case" });
   var inp = h("input", { type:"checkbox" }); inp.checked = !!C[cle];
   lab.append(inp, document.createTextNode(libelle));
-  var det = h("div", { "class":"detail" });
+  var det = h("div", { "class":"a-detail" });
   bloc.append(lab, det); parent.appendChild(bloc);
   function maj(){ det.hidden = !C[cle]; det.innerHTML = ""; if (C[cle]) remplir(det); }
   inp.addEventListener("change", function(){ C[cle] = inp.checked; sauver(); maj(); });
   maj();
 }
 function curseur(parent, libelle, min, max, pas, cle, unite){
-  var l = h("div", { "class":"ligne" });
+  var l = h("div", { "class":"a-ligne" });
   var r = h("input", { type:"range", min:min, max:max, step:pas, "aria-label":libelle }); r.value = C[cle];
-  var v = h("span", { "class":"val" });
+  var v = h("span", { "class":"a-val" });
   function aff(){ v.textContent = String(C[cle]).replace(".", ",") + " " + unite; }
   r.addEventListener("input", function(){ C[cle] = +r.value; aff(); sauver(); });
   l.append(h("b", null, libelle), r, v); aff(); parent.appendChild(l);
 }
 function detecteur(parent, libelle, lire, poser){
-  var l = h("div", { "class":"ligne" });
-  var nom = h("span", { "class":"entree" });
-  var b = h("button", { "class":"bt", type:"button" }, "Détecter");
-  function aff(){ var x = lire(); nom.textContent = (libelle ? libelle + " : " : "") + nomEntree(x); nom.classList.toggle("vide", !x); }
+  var l = h("div", { "class":"a-ligne" });
+  var nom = h("span", { "class":"a-entree" });
+  var b = h("button", { "class":"a-bt", type:"button" }, "Détecter");
+  function aff(){ var x = lire(); nom.textContent = (libelle ? libelle + " : " : "") + nomEntree(x); nom.classList.toggle("a-vide", !x); }
   b.addEventListener("click", function(){
     if (detection) detection.fin(null);
-    b.textContent = "Appuie sur le contacteur…"; b.classList.add("ecoute");
+    b.textContent = "Appuie sur le contacteur…"; b.classList.add("a-ecoute");
     var depart = performance.now(), fini = false;
     var minuterie = setTimeout(function(){ detection && detection.fin(null); }, 12000);
     detection = { fin:function(x){
       if (fini) return;
       if (x && x.type === "souris" && performance.now() - depart < 250) return;
       fini = true; clearTimeout(minuterie); detection = null;
-      b.textContent = "Détecter"; b.classList.remove("ecoute");
+      b.textContent = "Détecter"; b.classList.remove("a-ecoute");
       if (x){ poser(x); sauver(); avale = x; }
       aff();
     }};
@@ -449,10 +453,10 @@ function dessinerPanneau(){
   var s1 = h("div", { "class":"a-section" }); s1.appendChild(h("h3", null, "Pour tous les jeux"));
   caseDepliable(s1, "Ignorer les appuis trop rapprochés", "rapproche", function(d){
     curseur(d, "Attendre", .3, 3, .1, "delai", "s");
-    d.appendChild(h("p", { "class":"aide" }, "Après un appui, les appuis suivants sont ignorés pendant ce temps."));
+    d.appendChild(h("p", { "class":"a-aide" }, "Après un appui, les appuis suivants sont ignorés pendant ce temps."));
   });
   caseDepliable(s1, "Utiliser un contacteur", "contacteur", function(d){
-    var modes = h("div", { "class":"modes", role:"radiogroup" });
+    var modes = h("div", { "class":"a-modes", role:"radiogroup" });
     var TXT = { fonction:"Un contacteur par bouton", balayage:"Un seul contacteur, avec balayage", hasard:"Un seul contacteur, réaction au hasard" };
     var offerts = cfg.contacteur;
     if (offerts.indexOf(C.mode) < 0) C.mode = offerts[0];
@@ -462,29 +466,29 @@ function dessinerPanneau(){
       r.addEventListener("change", function(){ C.mode = m; balayage.attente = true; sauver(); remplirMode(); });
       lab.append(r, document.createTextNode(TXT[m])); modes.appendChild(lab);
     });
-    var zone = h("div", { "class":"detail", style:"margin-left:0" });
+    var zone = h("div", { "class":"a-detail", style:"margin-left:0" });
     d.append(modes, zone);
     function remplirMode(){
       zone.innerHTML = "";
       if (C.mode === "fonction"){
         var liste = cibles();
-        if (!liste.length) zone.appendChild(h("p", { "class":"aide" }, "Aucun bouton à associer sur cet écran."));
+        if (!liste.length) zone.appendChild(h("p", { "class":"a-aide" }, "Aucun bouton à associer sur cet écran."));
         liste.forEach(function(el, i){
           var n = nomCible(el, i);
           detecteur(zone, n, function(){ return J.entrees[n]; }, function(x){ J.entrees[n] = x; });
         });
-        zone.appendChild(h("p", { "class":"aide" }, "Pour chaque bouton : appuie sur « Détecter », puis sur le contacteur à lui associer."));
+        zone.appendChild(h("p", { "class":"a-aide" }, "Pour chaque bouton : appuie sur « Détecter », puis sur le contacteur à lui associer."));
       } else {
         detecteur(zone, "Contacteur", function(){ return C.unique; }, function(x){ C.unique = x; });
-        var ec = h("label", { "class":"case" }), ei = h("input", { type:"checkbox" });
+        var ec = h("label", { "class":"a-case" }), ei = h("input", { type:"checkbox" });
         ei.checked = !!C.ecran;
         ei.addEventListener("change", function(){ C.ecran = ei.checked; balayage.attente = true; sauver(); balayage.relancer(); });
         ec.append(ei, document.createTextNode("Tout l'écran sert aussi de contacteur"));
         zone.appendChild(ec);
-        zone.appendChild(h("p", { "class":"aide" }, "N'importe quel appui sur l'écran compte comme un appui sur le contacteur : pratique pour jouer sans contacteur. Le logo ARCADIA et le bouton pause restent utilisables."));
+        zone.appendChild(h("p", { "class":"a-aide" }, "N'importe quel appui sur l'écran compte comme un appui sur le contacteur : pratique pour jouer sans contacteur. Le logo ARCADIA et le bouton pause restent utilisables."));
         if (C.mode === "balayage"){
           curseur(zone, "Vitesse", .5, 5, .5, "vitesse", "s");
-          var dem = h("div", { "class":"modes", role:"radiogroup", "aria-label":"Démarrage du balayage" });
+          var dem = h("div", { "class":"a-modes", role:"radiogroup", "aria-label":"Démarrage du balayage" });
           [["auto","Balayage continu : un appui valide"],["appui","Deux appuis : le 1er lance le balayage, le 2e valide"]].forEach(function(o){
             var lab = h("label"), r = h("input", { type:"radio", name:"arcadia-demarrage", value:o[0] });
             r.checked = C.demarrage === o[0];
@@ -493,7 +497,7 @@ function dessinerPanneau(){
           });
           zone.appendChild(dem);
         }
-        zone.appendChild(h("p", { "class":"aide" }, C.mode === "balayage"
+        zone.appendChild(h("p", { "class":"a-aide" }, C.mode === "balayage"
           ? (C.demarrage === "appui"
             ? "Un premier appui fait apparaître le cadre jaune, qui passe d'un bouton à l'autre ; un second appui déclenche le bouton encadré. Le balayage s'arrête ensuite et attend. Sans réponse après 3 tours, il s'arrête aussi."
             : "Un cadre jaune passe d'un bouton à l'autre en continu ; un appui sur le contacteur déclenche le bouton encadré.")
@@ -506,13 +510,13 @@ function dessinerPanneau(){
 
   /* Ce jeu */
   var s2 = h("div", { "class":"a-section" }); s2.appendChild(h("h3", null, "Ce jeu"));
-  if (cfg.ceJeu){ cfg.ceJeu.hidden = false; cfg.ceJeu.classList.add("ce-jeu"); s2.appendChild(cfg.ceJeu); }
-  else s2.appendChild(h("p", { "class":"vide-jeu" }, "Ce jeu n'a pas de réglage particulier."));
+  if (cfg.ceJeu){ cfg.ceJeu.hidden = false; cfg.ceJeu.classList.add("a-ce-jeu"); s2.appendChild(cfg.ceJeu); }
+  else s2.appendChild(h("p", { "class":"a-vide-jeu" }, "Ce jeu n'a pas de réglage particulier."));
   carte.appendChild(s2);
 
   /* Bas du panneau */
   var pied = h("div", { "class":"a-pied" });
-  var reinit = h("button", { "class":"bt", type:"button" }, "↺ Réinitialiser");
+  var reinit = h("button", { "class":"a-bt", type:"button" }, "↺ Réinitialiser");
   var confirme = false;
   reinit.addEventListener("click", function(){
     if (!confirme){ confirme = true; reinit.textContent = "Sûr ? Touche encore"; setTimeout(function(){ confirme = false; reinit.textContent = "↺ Réinitialiser"; }, 3000); return; }
@@ -523,12 +527,12 @@ function dessinerPanneau(){
   });
   pied.appendChild(reinit);
   if (DANS_LUDO){
-    var q = h("button", { "class":"bt quitter", type:"button" }, "Quitter le jeu");
+    var q = h("button", { "class":"a-bt a-quitter", type:"button" }, "Quitter le jeu");
     q.addEventListener("click", function(){ try{ parent.postMessage("ludo-quitter", "*"); }catch(e){} });
     pied.appendChild(q);
   }
-  pied.appendChild(h("span", { "class":"esp" }));
-  var f = h("button", { "class":"bt fermer", type:"button" }, "Fermer");
+  pied.appendChild(h("span", { "class":"a-esp" }));
+  var f = h("button", { "class":"a-bt a-fermer", type:"button" }, "Fermer");
   f.addEventListener("click", fermer);
   pied.appendChild(f);
   carte.appendChild(pied);
