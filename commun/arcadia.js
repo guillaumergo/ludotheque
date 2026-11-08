@@ -21,7 +21,8 @@
  *   - plein écran automatique au premier appui ;
  *   - « Ignorer les appuis trop rapprochés » (délai réglable) ;
  *   - contacteurs : un par fonction, un seul avec balayage (continu, ou lancé par un
- *     premier appui puis validé par un second), un seul au hasard,
+ *     premier appui puis validé par un second), un seul au hasard ; en mode un seul
+ *     contacteur, « tout l'écran » fait compter n'importe quel appui sur l'écran,
  *     chaque contacteur étant détecté (touche, clic gauche ou clic droit) ;
  *   - bouton pause pour les jeux qui le demandent ;
  *   - Réinitialiser et Quitter le jeu (dans la ludothèque).
@@ -33,7 +34,7 @@ if (window.Arcadia) return;
 var LOGO = "__ARCADIA_LOGO__";
 var DANS_LUDO = window.parent !== window;
 var CLE_COMMUN = "arcadia-commun";
-var DEFAUT = { rapproche:false, delai:1, contacteur:false, mode:"balayage", vitesse:2, demarrage:"auto", unique:null };
+var DEFAUT = { rapproche:false, delai:1, contacteur:false, mode:"balayage", vitesse:2, demarrage:"auto", unique:null, ecran:false };
 
 function lire(k){ try{ return JSON.parse(localStorage.getItem(k) || "null"); }catch(e){ return null; } }
 function ecrire(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
@@ -112,8 +113,21 @@ function accepte(){
   if (C.rapproche && t - dernier < C.delai * 1000) return false;
   dernier = t; return true;
 }
+function ecranContacteur(){ return C.contacteur && C.ecran && C.mode !== "fonction" && !A.ouvert && !A.enPause; }
+var gesteEcran = false;
+function filtreEcran(e){
+  if (synth || dansUI(e.target)) return;
+  if (e.type === "pointerdown"){
+    gesteEcran = ecranContacteur();
+    if (gesteEcran){ stop(e); appuiUnique(); return; }
+  }
+  if (gesteEcran) stop(e);   // relâchement, clic… du même appui : avalés
+}
+["pointerdown","touchstart","mousedown","pointerup","touchend","mouseup","click","contextmenu"].forEach(function(ev){
+  addEventListener(ev, filtreEcran, { capture:true, passive:false });
+});
 function filtrePointeur(e){
-  if (synth || A.ouvert || !C.rapproche || dansUI(e.target)) return;
+  if (synth || A.ouvert || !C.rapproche || dansUI(e.target) || gesteEcran) return;
   if (e.type === "pointerdown"){ bloque = !accepte(); }
   if (bloque) stop(e);
 }
@@ -180,6 +194,12 @@ function entreeContacteur(e){
   }
   if (!memeEntree(C.unique, e)) return false;
   avale = C.unique;
+  appuiUnique();
+  return true;
+}
+/* Un appui du contacteur unique (ou de l'écran entier) : hasard ou balayage */
+function appuiUnique(){
+  var mode = C.mode, liste;
   if (!accepte()) return true;
   liste = cibles();
   if (!liste.length) return true;
@@ -205,7 +225,7 @@ function memeEntreeActive(e){
 /* ---------- Balayage ---------- */
 var balayage = {
   pos:0, minuteur:null, attente:true, pasFaits:0,
-  actif:function(){ return C.contacteur && C.mode === "balayage" && C.unique && !A.ouvert && !A.enPause; },
+  actif:function(){ return C.contacteur && C.mode === "balayage" && (C.unique || C.ecran) && !A.ouvert && !A.enPause; },
   pas:function(){
     var liste = cibles();
     if (!balayage.actif() || !liste.length){ surbrillance(null); return; }
@@ -456,6 +476,12 @@ function dessinerPanneau(){
         zone.appendChild(h("p", { "class":"aide" }, "Pour chaque bouton : appuie sur « Détecter », puis sur le contacteur à lui associer."));
       } else {
         detecteur(zone, "Contacteur", function(){ return C.unique; }, function(x){ C.unique = x; });
+        var ec = h("label", { "class":"case" }), ei = h("input", { type:"checkbox" });
+        ei.checked = !!C.ecran;
+        ei.addEventListener("change", function(){ C.ecran = ei.checked; balayage.attente = true; sauver(); balayage.relancer(); });
+        ec.append(ei, document.createTextNode("Tout l'écran sert aussi de contacteur"));
+        zone.appendChild(ec);
+        zone.appendChild(h("p", { "class":"aide" }, "N'importe quel appui sur l'écran compte comme un appui sur le contacteur : pratique pour jouer sans contacteur. Le logo ARCADIA et le bouton pause restent utilisables."));
         if (C.mode === "balayage"){
           curseur(zone, "Vitesse", .5, 5, .5, "vitesse", "s");
           var dem = h("div", { "class":"modes", role:"radiogroup", "aria-label":"Démarrage du balayage" });
