@@ -17,7 +17,9 @@ Utilisation :
 
   Pour ajouter des jeux sans avoir les sources de tous les autres :
   ajouter --garder-existants ; un jeu de la liste sans fichier dans DOSSIER_DES_JEUX
-  garde alors sa version chiffrée actuelle (et sa miniature).
+  garde alors sa version chiffrée actuelle (et sa miniature). Dans ce mode, aucun jeu
+  déjà publié n'est retiré : ceux qui manquent dans la liste sont conservés.
+  Pour retirer un jeu, construire sans --garder-existants.
   Variable LUDO_CHROME : chemin d'un Chrome à utiliser pour les miniatures.
 """
 import argparse, base64, gzip, hashlib, json, os, re, secrets, sys, time
@@ -130,6 +132,17 @@ def main():
 
     garder, entrees = set(), []
     anciens = {e["id"]: e for e in (ancien or {}).get("jeux", [])}
+    if a.garder_existants and ancien:
+        # Sécurité : en mode ajout, un jeu déjà publié qui manque dans la liste (ajouté depuis
+        # une autre conversation, par exemple) est conservé tel quel, avec sa catégorie.
+        presents = {j["id"] for j in liste["jeux"]}
+        for e in ancien["jeux"]:
+            if e["id"] not in presents:
+                print("  conservé ", e["id"], "(absent de la liste)")
+                liste["jeux"].append({k: v for k, v in e.items() if k not in ("fichier", "taille", "empreinte", "miniature")})
+        for c in ancien["categories"]:
+            if c not in liste["categories"]:
+                liste["categories"].append(c)
     for j in liste["jeux"]:
         source = os.path.join(a.sources, j["id"], "index.html")
         if a.garder_existants and not os.path.exists(source) and j["id"] in anciens:
