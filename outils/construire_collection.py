@@ -19,7 +19,7 @@ Utilisation :
   ajouter --garder-existants ; un jeu de la liste sans fichier dans DOSSIER_DES_JEUX
   garde alors sa version chiffrée actuelle (et sa miniature). Dans ce mode, aucun jeu
   déjà publié n'est retiré : ceux qui manquent dans la liste sont conservés.
-  Pour retirer un jeu, construire sans --garder-existants.
+  Pour retirer un jeu : --garder-existants --retirer <id> (répétable).
   Variable LUDO_CHROME : chemin d'un Chrome à utiliser pour les miniatures.
 
   Menu de paramètres ARCADIA : un jeu qui contient  <script data-arcadia></script>
@@ -127,6 +127,7 @@ def main():
     ap.add_argument("--miniatures")
     ap.add_argument("--exporter-liste")
     ap.add_argument("--garder-existants", action="store_true")
+    ap.add_argument("--retirer", action="append", default=[], help="id d'un jeu à retirer de la collection")
     a = ap.parse_args()
 
     cle = cle_des_jeux(a.code)
@@ -153,12 +154,13 @@ def main():
         # une autre conversation, par exemple) est conservé tel quel, avec sa catégorie.
         presents = {j["id"] for j in liste["jeux"]}
         for e in ancien["jeux"]:
-            if e["id"] not in presents:
+            if e["id"] not in presents and e["id"] not in a.retirer:
                 print("  conservé ", e["id"], "(absent de la liste)")
                 liste["jeux"].append({k: v for k, v in e.items() if k not in ("fichier", "taille", "empreinte", "miniature")})
         for c in ancien["categories"]:
             if c not in liste["categories"]:
                 liste["categories"].append(c)
+    liste["jeux"] = [j for j in liste["jeux"] if j["id"] not in a.retirer]
     for j in liste["jeux"]:
         source = os.path.join(a.sources, j["id"], "index.html")
         if a.garder_existants and not os.path.exists(source) and j["id"] in anciens:
