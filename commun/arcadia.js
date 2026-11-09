@@ -17,6 +17,7 @@
  *                              // photo…) est ouverte ; contacteurs et balayage s'arrêtent
  *      });
  *   Les fenêtres propres au jeu portent l'attribut data-arcadia-ui pour rester utilisables.
+ *   Arcadia.surReinit(fn) ajoute une action au bouton « Réinitialiser ».
  *   Arcadia.ouvert vaut true quand le panneau est affiché.
  *
  * Ce que fait le module, pour tous les jeux :
@@ -46,7 +47,7 @@ function effacer(k){ try{ localStorage.removeItem(k); }catch(e){} }
 var C = Object.assign({}, DEFAUT, lire(CLE_COMMUN) || {});
 var J = { entrees:{} };   // contacteurs « un par fonction », propres à chaque jeu
 var cfg = { cibles:function(){ return []; }, contacteur:["fonction","balayage","hasard"] };
-var synth = false, ui = {}, A;
+var synth = false, ui = {}, A, reinits = [];
 
 /* ---------- Plein écran automatique ---------- */
 function pleinEcran(){
@@ -523,6 +524,7 @@ function dessinerPanneau(){
     C = Object.assign({}, DEFAUT); J = { entrees:{} };
     effacer(CLE_COMMUN); if (cfg.id) effacer("arcadia-jeu-" + cfg.id);
     try{ if (cfg.reinitialiser) cfg.reinitialiser(); }catch(e){}
+    reinits.forEach(function(f){ try{ f(); }catch(e){} });
     p.remove(); dessinerPanneau();
   });
   pied.appendChild(reinit);
@@ -555,6 +557,8 @@ A = window.Arcadia = {
   },
   ouvrir:function(){ ouvrir(); }, fermer:function(){ fermer(); },
   majPause:function(){ if (ui.pause) majPause(); },
-  relancer:function(){ balayage.relancer(); }
+  relancer:function(){ balayage.relancer(); },
+  /* Ajoute une action à « Réinitialiser » (en plus de cfg.reinitialiser) */
+  surReinit:function(f){ if (typeof f === "function") reinits.push(f); }
 };
 })();
