@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Ma ludothèque</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
@@ -16,7 +16,7 @@
     --accent:#2f3e57; --accent-ink:#ffffff; --line:#e3ddcf; --danger:#c8423b;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%}
+  html,body{margin:0;height:100%;touch-action:manipulation}
   body{background:var(--bg);color:var(--ink);font-family:system-ui,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
        -webkit-tap-highlight-color:transparent;padding:env(safe-area-inset-top) 16px 40px}
   header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:20px 0 12px;max-width:1200px;margin:0 auto}
@@ -194,6 +194,16 @@
 <div id="toast"></div>
 <div id="drop">Dépose les jeux ici</div>
 
+<script>
+/* Pas de zoom sur la ludothèque (pincement, Ctrl + molette) */
+(function(){try{
+  var multi=function(e){if(e.touches&&e.touches.length>1)e.preventDefault();};
+  document.addEventListener("touchstart",multi,{passive:false});
+  document.addEventListener("touchmove",multi,{passive:false});
+  ["gesturestart","gesturechange","gestureend"].forEach(function(t){document.addEventListener(t,function(e){e.preventDefault();},{passive:false});});
+  document.addEventListener("wheel",function(e){if(e.ctrlKey)e.preventDefault();},{passive:false});
+}catch(e){}})();
+</script>
 <script>
 "use strict";
 const COULEURS = ["#e76f51","#f4a261","#e9c46a","#2a9d8f","#3a86ff","#8338ec","#ff6b9a","#43aa8b","#5e6472","#264653"];
@@ -528,6 +538,16 @@ $("dTelecharger").onclick = ()=>{
 const SCRIPT_JEU = `<script>(function(){try{
   var pe=function(){try{parent.postMessage("ludo-plein-ecran","*");}catch(e){}return Promise.resolve();};
   Element.prototype.requestFullscreen=pe;Element.prototype.webkitRequestFullscreen=pe;
+}catch(e){}
+/* Pas de zoom dans les jeux : ni pincement à plusieurs doigts, ni double appui, ni Ctrl + molette */
+try{
+  document.documentElement.style.touchAction="pan-x pan-y";
+  var multi=function(e){if(e.touches&&e.touches.length>1)e.preventDefault();};
+  document.addEventListener("touchstart",multi,{passive:false,capture:true});
+  document.addEventListener("touchmove",multi,{passive:false,capture:true});
+  ["gesturestart","gesturechange","gestureend"].forEach(function(t){document.addEventListener(t,function(e){e.preventDefault();},{passive:false});});
+  document.addEventListener("wheel",function(e){if(e.ctrlKey)e.preventDefault();},{passive:false});
+  document.addEventListener("dblclick",function(e){e.preventDefault();},{passive:false});
 }catch(e){}})();<\/script>`;
 function versionJeu(html){
   return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, m=>m+SCRIPT_JEU) : SCRIPT_JEU+html;
