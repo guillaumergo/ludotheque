@@ -13,8 +13,11 @@
  *        activer: (el, i) => {},          // optionnel : comment déclencher une cible
  *        pause: { visible: () => true, changer: (enPause) => {} }, // optionnel
  *        ouvrir: () => {}, fermer: () => {}, reinitialiser: () => {},  // optionnels
- *        occupe: () => false   // optionnel : vrai quand une fenêtre du jeu (fiche, cadrage
+ *        occupe: () => false,  // optionnel : vrai quand une fenêtre du jeu (fiche, cadrage
  *                              // photo…) est ouverte ; contacteurs et balayage s'arrêtent
+ *        maintien: (appuye) => {},     // optionnel : le contacteur unique (ou tout l'écran)
+ *        maintienActif: () => true     // sert à « maintenir pour agir » : le jeu reçoit
+ *                                      // l'appui (true) puis le relâchement (false)
  *      });
  *   Les fenêtres propres au jeu portent l'attribut data-arcadia-ui pour rester utilisables.
  *   Arcadia.surReinit(fn) ajoute une action au bouton « Réinitialiser ».
@@ -119,16 +122,23 @@ function accepte(){
 }
 function occupe(){ try{ return !!(cfg.occupe && cfg.occupe()); }catch(e){ return false; } }
 function ecranContacteur(){ return C.contacteur && C.ecran && C.mode !== "fonction" && !A.ouvert && !A.enPause && !occupe(); }
-var gesteEcran = false;
+var gesteEcran = false, maintenu = false;
+/* « Maintenir pour agir » : le jeu reçoit l'appui puis le relâchement du contacteur unique */
+function maintienActif(){ try{ return !!(cfg.maintien && (!cfg.maintienActif || cfg.maintienActif())); }catch(e){ return false; } }
+function appuyer(){ if (!accepte()) return; maintenu = true; try{ cfg.maintien(true); }catch(e){} }
+function relacher(){ if (!maintenu) return; maintenu = false; try{ cfg.maintien(false); }catch(e){} }
 function filtreEcran(e){
   if (synth || dansUI(e.target)) return;
   if (e.type === "pointerdown"){
     gesteEcran = ecranContacteur();
-    if (gesteEcran){ stop(e); appuiUnique(); return; }
+    if (gesteEcran){ stop(e); if (maintienActif()) appuyer(); else appuiUnique(); return; }
   }
-  if (gesteEcran) stop(e);   // relâchement, clic… du même appui : avalés
+  if (gesteEcran){
+    stop(e);   // relâchement, clic… du même appui : avalés
+    if (e.type === "pointerup" || e.type === "pointercancel" || e.type === "touchend") relacher();
+  }
 }
-["pointerdown","touchstart","mousedown","pointerup","touchend","mouseup","click","contextmenu"].forEach(function(ev){
+["pointerdown","touchstart","mousedown","pointerup","pointercancel","touchend","mouseup","click","contextmenu"].forEach(function(ev){
   addEventListener(ev, filtreEcran, { capture:true, passive:false });
 });
 function filtrePointeur(e){
@@ -163,7 +173,7 @@ addEventListener("keydown", function(e){
   }
 }, true);
 addEventListener("keyup", function(e){
-  if (avale && avale.type === "touche" && e.code === avale.code){ stop(e); avale = null; }
+  if (avale && avale.type === "touche" && e.code === avale.code){ stop(e); avale = null; relacher(); }
 }, true);
 
 function filtreSouris(e){
@@ -176,6 +186,7 @@ function filtreSouris(e){
   /* Fin d'un appui de contacteur souris : on avale le relâchement et le clic */
   if (avale && avale.type === "souris" && e.type !== "pointerdown"){
     if (e.type === "contextmenu" || e.button === avale.bouton) stop(e);
+    if ((e.type === "pointerup" || e.type === "mouseup") && e.button === avale.bouton) relacher();
     if (e.type === "click" || e.type === "contextmenu" || e.type === "auxclick") avale = null;
     return;
   }
@@ -199,6 +210,7 @@ function entreeContacteur(e){
   }
   if (!memeEntree(C.unique, e)) return false;
   avale = C.unique;
+  if (maintienActif()){ appuyer(); return true; }
   appuiUnique();
   return true;
 }
@@ -382,6 +394,7 @@ function majPause(){
 
 /* ---------- Panneau ---------- */
 function ouvrir(){
+  relacher();
   if (A.ouvert) return;
   A.ouvert = true;
   try{ if (cfg.ouvrir) cfg.ouvrir(); }catch(e){}
