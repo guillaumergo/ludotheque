@@ -665,6 +665,14 @@ async function majCollection(silencieux, cle, progression){
     ordreCategories = cat.categories || [];
     await ecrireReglage("categories", ordreCategories);
     const parId = new Map(jeux.filter(j=>j.coll).map(j=>[j.id,j]));
+    const metaDe = e=>({nom:e.nom, emoji:e.emoji, couleur:e.couleur, dossier:e.categorie, miniature:e.miniature||null});
+    // nom, catégorie, icône… changés sans que le jeu change : on met juste les infos à jour
+    for (const e of cat.jeux){
+      const j=parId.get("c:"+e.id); if (!j || j.coll.empreinte!==e.empreinte || !j.html) continue;
+      const meta=metaDe(e), avant=j.coll.meta||{}; let change=false;
+      for (const k in meta){ if (JSON.stringify(meta[k])!==JSON.stringify(avant[k])){ change=true; if (j[k]===avant[k]) j[k]=meta[k]; } }
+      if (change){ j.coll = {empreinte:e.empreinte, meta}; await enregistrer(j); }
+    }
     const aFaire = cat.jeux.filter(e=>{ const j=parId.get("c:"+e.id); return !j || j.coll.empreinte!==e.empreinte || !j.html; });
     const total = aFaire.reduce((s,e)=>s+e.taille,0); let fait=0, nouveaux=0, majs=0;
     for (const e of aFaire){
