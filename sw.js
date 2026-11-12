@@ -1,5 +1,5 @@
 // Garde la ludothèque disponible hors ligne une fois ouverte une première fois.
-const CACHE = "ludotheque-v3";
+const CACHE = "ludotheque-v4";
 const FICHIERS = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./html2canvas.min.js"];
 
 self.addEventListener("install", (e) => {

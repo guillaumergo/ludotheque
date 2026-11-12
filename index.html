@@ -638,16 +638,46 @@ async function telecharger_(chemin){
   if (!r.ok) throw new Error("HTTP "+r.status);
   return r.arrayBuffer();
 }
+const importerCle = (brute)=> crypto.subtle.importKey("raw", brute, {name:"AES-GCM"}, false, ["decrypt"]);
+const hex = (buf)=> [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");
+async function lireAcces(){
+  const r = await fetch(DOSSIER_COLL+"acces.json",{cache:"no-store"});
+  if (r.status===404) return {codes:[]};
+  if (!r.ok) throw new Error("HTTP "+r.status);
+  return r.json();
+}
+/* Renvoie {cle, acces} : acces vaut null pour le code complet,
+   ou {id, cle} pour un code de test (qui n'ouvre qu'une partie de la collection). */
 async function cleDepuisCode(code){
   const info = await (await fetch(DOSSIER_COLL+"cle.json",{cache:"no-store"})).json();
-  const base = await crypto.subtle.importKey("raw", texte.encode(normaliserCode(code)), "PBKDF2", false, ["deriveKey"]);
+  const base = await crypto.subtle.importKey("raw", texte.encode(normaliserCode(code)), "PBKDF2", false, ["deriveKey","deriveBits"]);
   const k = await crypto.subtle.deriveKey({name:"PBKDF2", salt:b64enOctets(info.sel), iterations:info.iterations, hash:"SHA-256"},
                                           base, {name:"AES-GCM", length:256}, false, ["decrypt"]);
-  let brute;
-  try{ brute = await dechiffrer(k, b64enOctets(info.cle)); }
-  catch(e){ const err=new Error("code"); err.code=true; throw err; }
-  // la clé des jeux est gardée sur l'appareil, non exportable (le code, lui, n'est pas conservé)
-  return crypto.subtle.importKey("raw", brute, {name:"AES-GCM"}, false, ["decrypt"]);
+  try{
+    // la clé des jeux est gardée sur l'appareil, non exportable (le code, lui, n'est pas conservé)
+    return {cle: await importerCle(await dechiffrer(k, b64enOctets(info.cle))), acces:null};
+  }catch(e){}
+  // Pas le code complet : est-ce un code de test ?
+  const acc = await lireAcces();
+  if (acc.sel && acc.codes && acc.codes.length){
+    const bits = await crypto.subtle.deriveBits({name:"PBKDF2", salt:b64enOctets(acc.sel), iterations:acc.iterations, hash:"SHA-256"}, base, 256);
+    const tag = hex(await crypto.subtle.digest("SHA-256", new Uint8Array([...texte.encode("ludo-tag:"), ...new Uint8Array(bits)]))).slice(0,24);
+    const entree = acc.codes.find(c=>c.tag===tag);
+    if (entree){
+      const kw = await importerCle(bits);
+      const deux = new Uint8Array(await dechiffrer(kw, b64enOctets(entree.cle)));
+      return {cle: await importerCle(deux.slice(0,32)), acces:{id:entree.id, cle: await importerCle(deux.slice(32,64))}};
+    }
+  }
+  const err=new Error("code"); err.code=true; throw err;
+}
+/* Liste des jeux autorisés pour un code de test (null si le code a été supprimé). */
+async function jeuxAutorises(acces){
+  const acc = await lireAcces();
+  const entree = (acc.codes||[]).find(c=>c.id===acces.id);
+  if (!entree) return null;
+  const l = JSON.parse(new TextDecoder().decode(await dechiffrer(acces.cle, b64enOctets(entree.liste))));
+  return new Set(l.jeux||[]);
 }
 async function etatCollection(){
   let cle=null; try{ cle = await lireReglage("cle"); }catch(e){}
@@ -662,6 +692,20 @@ async function majCollection(silencieux, cle, progression){
     cle = cle || await lireReglage("cle");
     if (!cle) return;
     const cat = JSON.parse(await degzip(await dechiffrer(cle, await telecharger_("catalogue.bin"))));
+    // Code de test : on ne garde que les jeux choisis pour ce code
+    let acces = null; try{ acces = await lireReglage("acces"); }catch(e){}
+    if (acces){
+      const ok = await jeuxAutorises(acces);
+      if (!ok){
+        // Le code de test a été supprimé : les jeux de la collection sont retirés de l'appareil
+        for (const j of jeux.filter(j=>j.coll)) await supprimer(j.id);
+        jeux = jeux.filter(j=>!j.coll);
+        await effacerReglage("cle"); await effacerReglage("acces"); await etatCollection(); afficher();
+        toast("Ce code de test n'est plus actif : les jeux de la collection ont été retirés");
+        return;
+      }
+      cat.jeux = cat.jeux.filter(e=>ok.has(e.id));
+    }
     ordreCategories = cat.categories || [];
     await ecrireReglage("categories", ordreCategories);
     const parId = new Map(jeux.filter(j=>j.coll).map(j=>[j.id,j]));
@@ -720,8 +764,8 @@ $("codeOk").onclick = async ()=>{
   if (normaliserCode(code).length<6){ $("codeErr").textContent="Le code est trop court."; return; }
   if (!navigator.onLine){ $("codeErr").textContent="Il faut internet pour l'activation (une seule fois)."; return; }
   $("codeErr").textContent=""; $("codeOk").disabled=true; $("codeEtat").textContent="Vérification du code…";
-  let cle;
-  try{ cle = await cleDepuisCode(code); }
+  let cle, acces;
+  try{ ({cle, acces} = await cleDepuisCode(code)); }
   catch(e){
     $("codeOk").disabled=false;
     $("codeEtat").textContent="";
@@ -729,6 +773,7 @@ $("codeOk").onclick = async ()=>{
     return;
   }
   await ecrireReglage("cle", cle);
+  if (acces) await ecrireReglage("acces", acces); else await effacerReglage("acces");
   try{ if(navigator.storage && navigator.storage.persist) await navigator.storage.persist(); }catch(e){}
   $("codeProg").hidden=false;
   try{
@@ -749,7 +794,7 @@ $("btnDesactiver").onclick = async ()=>{
   if (!confirm("Retirer tous les jeux de la collection de cet appareil ?\n\nTes jeux ajoutés à la main sont gardés. Il faudra le code pour les retrouver.")) return;
   for (const j of jeux.filter(j=>j.coll)) await supprimer(j.id);
   jeux = jeux.filter(j=>!j.coll);
-  await effacerReglage("cle"); await etatCollection(); afficher(); toast("Collection retirée de cet appareil");
+  await effacerReglage("cle"); await effacerReglage("acces"); await etatCollection(); afficher(); toast("Collection retirée de cet appareil");
 };
 
 /* ---------- Démarrage ---------- */

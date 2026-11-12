@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Codes de test – Ludothèque</title>
+<style>
+  :root{--bg:#f5f1e8;--ink:#22283a;--muted:#6b7183;--card:#fff;--accent:#2f3e57;--line:#e3ddcf;--danger:#c8423b;--ok:#2a9d8f}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,"Segoe UI",Roboto,sans-serif;padding:16px 16px 60px}
+  main{max-width:900px;margin:0 auto}
+  h1{font-size:30px;margin:12px 0 4px}
+  h2{font-size:21px;margin:28px 0 10px}
+  p.aide{color:var(--muted);line-height:1.45;margin:4px 0 14px}
+  .carte{background:var(--card);border-radius:18px;padding:18px;box-shadow:0 0 0 1px var(--line) inset;margin:12px 0}
+  .btn{border:0;border-radius:12px;padding:11px 16px;font:inherit;font-weight:600;font-size:16px;cursor:pointer;background:var(--card);color:var(--ink);box-shadow:0 0 0 1.5px var(--line) inset}
+  .btn.primary{background:var(--accent);color:#fff;box-shadow:none}
+  .btn.danger{background:var(--danger);color:#fff;box-shadow:none}
+  .btn.ok{background:var(--ok);color:#fff;box-shadow:none}
+  .btn:disabled{opacity:.5;cursor:default}
+  input[type=text],input[type=password]{font:inherit;font-size:17px;padding:11px 13px;border-radius:12px;border:1.5px solid var(--line);background:#fff;color:var(--ink);width:100%}
+  label{display:block;font-weight:600;margin:12px 0 6px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:20px;letter-spacing:2px;background:var(--bg);padding:4px 10px;border-radius:8px}
+  .err{color:var(--danger);min-height:1.2em}
+  .liste-code{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+  .liste-code .nom{font-size:19px;font-weight:700}
+  .liste-code small{color:var(--muted);display:block;margin-top:3px}
+  .cat{margin:16px 0 4px;display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px}
+  .cat button{font-size:13px;padding:5px 10px}
+  .jeux{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px}
+  .jeu{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:var(--bg);cursor:pointer;font-size:15px}
+  .jeu input{width:20px;height:20px;flex:none}
+  .barre{position:sticky;bottom:0;background:var(--bg);padding:12px 0;display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;border-top:1px solid var(--line);margin-top:16px}
+  .modif{background:#fff3cd;border-radius:14px;padding:12px 16px;margin:14px 0}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 20px;border-radius:14px;opacity:0;transition:.25s;pointer-events:none;max-width:90vw;text-align:center}
+  #toast.show{opacity:1}
+  details summary{cursor:pointer;font-weight:600}
+</style>
+</head>
+<body>
+<main>
+  <h1>🔑 Codes de test</h1>
+  <p class="aide">Chaque code de test n'ouvre qu'une partie de la collection. Tu choisis les jeux, tu donnes le code au lieu qui teste. Si tu ajoutes ou retires un jeu, les tablettes déjà activées se mettent à jour toutes seules à leur prochaine connexion. Si tu supprimes le code, les jeux de la collection disparaissent de ces tablettes.</p>
+
+  <!-- 1. Déverrouillage -->
+  <section id="vueCode" class="carte">
+    <label for="maitre">Ton code complet (celui qui ouvre toute la collection)</label>
+    <div class="row">
+      <input type="password" id="maitre" autocomplete="off" style="flex:1;min-width:220px">
+      <button class="btn primary" id="ouvrir">Ouvrir</button>
+    </div>
+    <p class="err" id="errMaitre"></p>
+  </section>
+
+  <!-- 2. Liste des codes -->
+  <section id="vueListe" hidden>
+    <div class="modif" id="modif" hidden>⚠️ Des changements ne sont pas encore publiés. <button class="btn ok" id="publier1">Publier</button></div>
+    <div class="row" style="justify-content:space-between">
+      <h2>Codes existants</h2>
+      <button class="btn primary" id="nouveau">＋ Nouveau code</button>
+    </div>
+    <div id="codes"></div>
+    <details class="carte" id="detailsGithub">
+      <summary>Publication sur GitHub</summary>
+      <p class="aide">Pour publier en un clic depuis cette page, colle ici un jeton GitHub (« fine-grained token » limité au dépôt <b>ludotheque</b>, avec la permission <b>Contents : Read and write</b>). Il reste uniquement sur cet appareil. Sans jeton, le bouton Publier télécharge le fichier <code>acces.json</code> à déposer dans le dossier <code>collection</code> du dépôt.</p>
+      <div class="row">
+        <input type="password" id="jeton" placeholder="github_pat_…" style="flex:1;min-width:220px">
+        <button class="btn" id="garderJeton">Garder</button>
+        <button class="btn" id="oublierJeton">Oublier</button>
+      </div>
+    </details>
+  </section>
+
+  <!-- 3. Modification d'un code -->
+  <section id="vueEdit" hidden>
+    <h2 id="titreEdit">Nouveau code</h2>
+    <div class="carte">
+      <label for="eNom">Lieu ou personne (pour toi seulement)</label>
+      <input type="text" id="eNom" maxlength="60" placeholder="ex. IME Les Lilas – test novembre">
+      <label for="eCode">Code à donner</label>
+      <div class="row">
+        <input type="text" id="eCode" maxlength="30" style="flex:1;min-width:200px;font-family:ui-monospace,monospace;letter-spacing:2px;text-transform:uppercase">
+        <button class="btn" id="regenerer">🎲 Autre code</button>
+      </div>
+      <p class="aide" id="aideCode">Lettres et chiffres, 6 au minimum. Le code ne peut plus être changé une fois créé.</p>
+      <p class="err" id="errEdit"></p>
+    </div>
+    <div class="row" style="justify-content:space-between">
+      <h2>Jeux ouverts par ce code <small id="compte" style="color:var(--muted);font-weight:500"></small></h2>
+      <div class="row"><button class="btn" id="toutCocher">Tout cocher</button><button class="btn" id="toutDecocher">Tout décocher</button></div>
+    </div>
+    <div id="choixJeux"></div>
+    <div class="barre">
+      <button class="btn" id="annuler">Annuler</button>
+      <button class="btn primary" id="valider">Valider</button>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const DEPOT = "guillaumergo/ludotheque", BRANCHE = "main", CHEMIN = "collection/acces.json";
+const COLL = "../collection/";
+const $ = (id)=>document.getElementById(id);
+const txt = new TextEncoder(), dec = new TextDecoder();
+const b64 = (u8)=>{ let s=""; for (const b of new Uint8Array(u8)) s+=String.fromCharCode(b); return btoa(s); };
+const unb64 = (s)=> Uint8Array.from(atob(s), c=>c.charCodeAt(0));
+const hex = (buf)=> [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");
+const alea = (n)=> crypto.getRandomValues(new Uint8Array(n));
+const normaliser = (c)=> c.toUpperCase().replace(/[^A-Z0-9]/g,"");
+function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(toast.h); toast.h=setTimeout(()=>t.classList.remove("show"),3000); }
+
+const aes = (raw, usages)=> crypto.subtle.importKey("raw", raw, {name:"AES-GCM"}, false, usages);
+async function chiffrer(cle, donnees){ const iv=alea(12); const c=await crypto.subtle.encrypt({name:"AES-GCM",iv}, cle, donnees); const o=new Uint8Array(12+c.byteLength); o.set(iv); o.set(new Uint8Array(c),12); return b64(o); }
+async function dechiffrer(cle, s){ const b=typeof s==="string"?unb64(s):new Uint8Array(s); return new Uint8Array(await crypto.subtle.decrypt({name:"AES-GCM",iv:b.slice(0,12)}, cle, b.slice(12))); }
+async function bitsDuCode(code, sel, iterations){
+  const base = await crypto.subtle.importKey("raw", txt.encode(normaliser(code)), "PBKDF2", false, ["deriveBits"]);
+  return new Uint8Array(await crypto.subtle.deriveBits({name:"PBKDF2", salt:sel, iterations, hash:"SHA-256"}, base, 256));
+}
+async function tagDe(bits){ return hex(await crypto.subtle.digest("SHA-256", new Uint8Array([...txt.encode("ludo-tag:"), ...bits]))).slice(0,24); }
+async function degzip(u8){ return new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream("gzip"))).text(); }
+async function lire(chemin, json){ const r=await fetch(COLL+chemin+"?t="+Date.now(),{cache:"no-store"}); if(!r.ok){ const e=new Error("HTTP "+r.status); e.status=r.status; throw e; } return json? r.json() : r.arrayBuffer(); }
+
+/* ---------- État ---------- */
+let infoMaitre, cleJeuxBrute, cleJeux, catalogue, acces, codes = [], modifie = false, enEdition = null;
+
+$("maitre").addEventListener("keydown", e=>{ if(e.key==="Enter") $("ouvrir").click(); });
+$("ouvrir").onclick = async ()=>{
+  $("errMaitre").textContent=""; $("ouvrir").disabled=true; $("ouvrir").textContent="…";
+  try{
+    infoMaitre = await lire("cle.json", true);
+    const bits = await bitsDuCode($("maitre").value, unb64(infoMaitre.sel), infoMaitre.iterations);
+    try{ cleJeuxBrute = await dechiffrer(await aes(bits,["decrypt"]), infoMaitre.cle); }
+    catch(e){ throw new Error("Ce n'est pas le code complet de la collection."); }
+    cleJeux = await aes(cleJeuxBrute, ["encrypt","decrypt"]);
+    catalogue = JSON.parse(await degzip(await dechiffrer(cleJeux, await lire("catalogue.bin"))));
+    try{ acces = await lire("acces.json", true); }
+    catch(e){ if (e.status!==404) throw e; acces = null; }
+    if (!acces) acces = {v:1, sel:b64(alea(16)), iterations:250000, codes:[]};
+    codes = [];
+    for (const c of acces.codes){
+      const a = JSON.parse(dec.decode(await dechiffrer(cleJeux, c.admin)));
+      const kc = await aes(unb64(a.kc), ["encrypt","decrypt"]);
+      const l = JSON.parse(dec.decode(await dechiffrer(kc, c.liste)));
+      codes.push({id:c.id, tag:c.tag, cle:c.cle, nom:a.nom, code:a.code, kcBrute:a.kc, jeux:l.jeux||[]});
+    }
+    $("maitre").value="";
+    $("vueCode").hidden=true; $("vueListe").hidden=false;
+    try{ $("jeton").value = localStorage.getItem("ludo-jeton-github") || ""; }catch(e){}
+    afficherListe();
+  }catch(e){
+    $("errMaitre").textContent = e.message.startsWith("HTTP") || e.name==="TypeError" ? "Connexion impossible : il faut internet." : e.message;
+  }
+  $("ouvrir").disabled=false; $("ouvrir").textContent="Ouvrir";
+};
+
+const nomJeu = (id)=> (catalogue.jeux.find(j=>j.id===id)||{}).nom;
+function afficherListe(){
+  $("modif").hidden = !modifie;
+  const box=$("codes"); box.innerHTML="";
+  if (!codes.length){ box.innerHTML=`<p class="aide">Aucun code de test pour l'instant.</p>`; return; }
+  for (const c of codes){
+    const presents = c.jeux.filter(nomJeu);
+    const d=document.createElement("div"); d.className="carte liste-code";
+    d.innerHTML=`<div><div class="nom"></div><span class="code"></span><small></small></div>
+      <div class="row"><button class="btn">✏️ Modifier</button><button class="btn danger">🗑️ Supprimer</button></div>`;
+    d.querySelector(".nom").textContent=c.nom||"(sans nom)";
+    d.querySelector(".code").textContent=c.code;
+    d.querySelector("small").textContent = presents.length+" jeu"+(presents.length>1?"x":"")+" : "+presents.map(nomJeu).join(", ");
+    const [bM,bS]=d.querySelectorAll("button");
+    bM.onclick=()=>ouvrirEdition(c);
+    bS.onclick=()=>{ if(!confirm(`Supprimer le code ${c.code} (${c.nom}) ?\n\nAprès publication, les tablettes qui l'utilisent perdront les jeux de la collection.`)) return;
+      codes=codes.filter(x=>x!==c); modifie=true; afficherListe(); };
+    box.appendChild(d);
+  }
+}
+
+/* ---------- Modification ---------- */
+const LETTRES="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function genererCode(){ const r=alea(8); let s=""; for(let i=0;i<8;i++) s+=LETTRES[r[i]%LETTRES.length]; return "TEST-"+s.slice(0,4)+"-"+s.slice(4); }
+function ouvrirEdition(c){
+  enEdition = c || null;
+  $("titreEdit").textContent = c ? "Modifier le code" : "Nouveau code";
+  $("eNom").value = c ? c.nom : "";
+  $("eCode").value = c ? c.code : genererCode();
+  $("eCode").disabled = !!c; $("regenerer").hidden = !!c;
+  $("aideCode").hidden = !!c;
+  $("errEdit").textContent="";
+  const choisis = new Set(c ? c.jeux : []);
+  const box=$("choixJeux"); box.innerHTML="";
+  const cats=[...catalogue.categories]; catalogue.jeux.forEach(j=>{ if(!cats.includes(j.categorie)) cats.push(j.categorie); });
+  for (const cat of cats){
+    const liste=catalogue.jeux.filter(j=>j.categorie===cat); if(!liste.length) continue;
+    const h=document.createElement("div"); h.className="cat"; h.innerHTML=`<span></span><button class="btn">tout</button><button class="btn">rien</button>`;
+    h.firstChild.textContent=cat||"Sans catégorie";
+    const g=document.createElement("div"); g.className="jeux";
+    for (const j of liste){
+      const l=document.createElement("label"); l.className="jeu"; l.style.fontWeight="500";
+      l.innerHTML=`<input type="checkbox"><span></span>`;
+      l.querySelector("input").value=j.id; l.querySelector("input").checked=choisis.has(j.id);
+      l.querySelector("span").textContent=(j.emoji?j.emoji+" ":"")+j.nom;
+      g.appendChild(l);
+    }
+    const [bT,bR]=h.querySelectorAll("button");
+    bT.onclick=()=>{ g.querySelectorAll("input").forEach(i=>i.checked=true); compter(); };
+    bR.onclick=()=>{ g.querySelectorAll("input").forEach(i=>i.checked=false); compter(); };
+    box.append(h,g);
+  }
+  compter();
+  $("vueListe").hidden=true; $("vueEdit").hidden=false; scrollTo(0,0);
+}
+function cochesActuelles(){ return [...$("choixJeux").querySelectorAll("input:checked")].map(i=>i.value); }
+function compter(){ const n=cochesActuelles().length; $("compte").textContent=`(${n} sur ${catalogue.jeux.length})`; }
+$("choixJeux").addEventListener("change", compter);
+$("toutCocher").onclick=()=>{ $("choixJeux").querySelectorAll("input").forEach(i=>i.checked=true); compter(); };
+$("toutDecocher").onclick=()=>{ $("choixJeux").querySelectorAll("input").forEach(i=>i.checked=false); compter(); };
+$("regenerer").onclick=()=>{ $("eCode").value=genererCode(); };
+$("nouveau").onclick=()=>ouvrirEdition(null);
+$("annuler").onclick=()=>{ $("vueEdit").hidden=true; $("vueListe").hidden=false; };
+$("valider").onclick=async ()=>{
+  const nom=$("eNom").value.trim(), jeux=cochesActuelles();
+  if (!nom){ $("errEdit").textContent="Donne un nom (le lieu), pour t'y retrouver."; scrollTo(0,0); return; }
+  if (!jeux.length && !confirm("Aucun jeu coché : ce code n'ouvrira rien. Continuer ?")) return;
+  $("valider").disabled=true;
+  try{
+    if (enEdition){
+      enEdition.nom=nom; enEdition.jeux=jeux;
+    } else {
+      const code=$("eCode").value.toUpperCase().trim();
+      if (normaliser(code).length<6) throw new Error("Le code doit avoir au moins 6 lettres ou chiffres.");
+      // ne doit être ni le code complet, ni un code déjà utilisé
+      const bm = await bitsDuCode(code, unb64(infoMaitre.sel), infoMaitre.iterations);
+      let estMaitre=true; try{ await dechiffrer(await aes(bm,["decrypt"]), infoMaitre.cle); }catch(e){ estMaitre=false; }
+      if (estMaitre) throw new Error("Ce code est ton code complet : choisis-en un autre.");
+      const bits = await bitsDuCode(code, unb64(acces.sel), acces.iterations);
+      const tag = await tagDe(bits);
+      if (codes.some(c=>c.tag===tag)) throw new Error("Ce code existe déjà.");
+      const kc = alea(32), deux = new Uint8Array(64); deux.set(cleJeuxBrute); deux.set(kc,32);
+      codes.push({id:hex(alea(6)), tag, cle: await chiffrer(await aes(bits,["encrypt"]), deux), nom, code, kcBrute:b64(kc), jeux});
+    }
+    modifie=true;
+    $("vueEdit").hidden=true; $("vueListe").hidden=false; afficherListe();
+    toast("Enregistré. Pense à publier.");
+  }catch(e){ $("errEdit").textContent=e.message; scrollTo(0,0); }
+  $("valider").disabled=false;
+};
+
+/* ---------- Publication ---------- */
+async function fichierAcces(){
+  const out={v:1, sel:acces.sel, iterations:acces.iterations, codes:[]};
+  for (const c of codes){
+    const kc = await aes(unb64(c.kcBrute), ["encrypt"]);
+    out.codes.push({ id:c.id, tag:c.tag, cle:c.cle,
+      liste: await chiffrer(kc, txt.encode(JSON.stringify({jeux:c.jeux}))),
+      admin: await chiffrer(cleJeux, txt.encode(JSON.stringify({nom:c.nom, code:c.code, kc:c.kcBrute}))) });
+  }
+  return JSON.stringify(out, null, 1)+"\n";
+}
+async function publier(){
+  const contenu = await fichierAcces();
+  let jeton=""; try{ jeton=localStorage.getItem("ludo-jeton-github")||""; }catch(e){}
+  if (!jeton){
+    const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([contenu],{type:"application/json"})); a.download="acces.json";
+    document.body.appendChild(a); a.click(); a.remove();
+    alert("Le fichier acces.json est téléchargé.\n\nDépose-le dans le dossier « collection » du dépôt GitHub (la page va s'ouvrir), puis valide avec « Commit changes ».");
+    open(`https://github.com/${DEPOT}/upload/${BRANCHE}/collection`, "_blank");
+    modifie=false; afficherListe(); return;
+  }
+  const api=`https://api.github.com/repos/${DEPOT}/contents/${CHEMIN}`;
+  const h={Authorization:"Bearer "+jeton, Accept:"application/vnd.github+json"};
+  let sha; const r0=await fetch(api+"?ref="+BRANCHE+"&t="+Date.now(),{headers:h, cache:"no-store"});
+  if (r0.ok) sha=(await r0.json()).sha; else if (r0.status!==404) throw new Error("GitHub refuse le jeton ("+r0.status+")");
+  const r=await fetch(api,{method:"PUT", headers:h, body:JSON.stringify({message:"Codes de test : mise à jour", content:btoa(contenu), branch:BRANCHE, ...(sha?{sha}:{})})});
+  if (!r.ok) throw new Error("Publication refusée par GitHub ("+r.status+")");
+  modifie=false; afficherListe();
+  toast("Publié ! En ligne d'ici une à deux minutes.");
+}
+$("publier1").onclick=async ()=>{ const b=$("publier1"); b.disabled=true; try{ await publier(); }catch(e){ alert(e.message); } b.disabled=false; };
+$("garderJeton").onclick=()=>{ try{ localStorage.setItem("ludo-jeton-github",$("jeton").value.trim()); toast("Jeton gardé sur cet appareil"); }catch(e){ toast("Impossible de garder le jeton ici"); } };
+$("oublierJeton").onclick=()=>{ try{ localStorage.removeItem("ludo-jeton-github"); }catch(e){} $("jeton").value=""; toast("Jeton oublié"); };
+addEventListener("beforeunload", e=>{ if(modifie){ e.preventDefault(); e.returnValue=""; } });
+</script>
+</body>
+</html>
