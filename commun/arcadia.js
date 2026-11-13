@@ -8,7 +8,8 @@
  *        id: "feux-artifice",            // sert à mémoriser les réglages de ce jeu
  *        titre: "Feux d'artifice",
  *        cibles: () => [...],             // éléments que le contacteur peut déclencher
- *        contacteur: ["fonction","balayage","hasard"], // modes proposés (défaut : les 3)
+ *        contacteur: ["fonction","balayage","hasard"], // modes proposés (défaut : les 3) ;
+ *                                         // [] : pas de contacteur dans ce jeu (section masquée)
  *        ceJeu: element,                  // réglages propres au jeu (déplacés dans le panneau)
  *        activer: (el, i) => {},          // optionnel : comment déclencher une cible
  *        pause: { visible: () => true, changer: (enPause) => {} }, // optionnel
@@ -121,7 +122,8 @@ function accepte(){
   dernier = t; return true;
 }
 function occupe(){ try{ return !!(cfg.occupe && cfg.occupe()); }catch(e){ return false; } }
-function ecranContacteur(){ return C.contacteur && C.ecran && C.mode !== "fonction" && !A.ouvert && !A.enPause && !occupe(); }
+function avecContacteur(){ return !!(C.contacteur && cfg.contacteur && cfg.contacteur.length); }
+function ecranContacteur(){ return avecContacteur() && C.ecran && C.mode !== "fonction" && !A.ouvert && !A.enPause && !occupe(); }
 var gesteEcran = false, maintenu = false;
 /* « Maintenir pour agir » : le jeu reçoit l'appui puis le relâchement du contacteur unique */
 function maintienActif(){ try{ return !!(cfg.maintien && (!cfg.maintienActif || cfg.maintienActif())); }catch(e){ return false; } }
@@ -167,7 +169,7 @@ addEventListener("keydown", function(e){
     if (e.key === "Escape"){ stop(e); fermer(); }
     return;
   }
-  if (C.contacteur && !dansUI(e.target) && !occupe() && entreeContacteur(e)){ stop(e); return; }
+  if (avecContacteur() && !dansUI(e.target) && !occupe() && entreeContacteur(e)){ stop(e); return; }
   if (C.rapproche && !dansUI(e.target)){
     if (e.repeat || !accepte()) stop(e);
   }
@@ -190,7 +192,7 @@ function filtreSouris(e){
     if (e.type === "click" || e.type === "contextmenu" || e.type === "auxclick") avale = null;
     return;
   }
-  if (A.ouvert || !C.contacteur || dansUI(e.target) || occupe()) return;
+  if (A.ouvert || !avecContacteur() || dansUI(e.target) || occupe()) return;
   if (e.type === "pointerdown" && e.pointerType === "mouse" && entreeContacteur(e)){ stop(e); return; }
 }
 ["pointerdown","mousedown","pointerup","mouseup","click","auxclick","contextmenu"].forEach(function(ev){
@@ -242,7 +244,7 @@ function memeEntreeActive(e){
 /* ---------- Balayage ---------- */
 var balayage = {
   pos:0, minuteur:null, attente:true, pasFaits:0,
-  actif:function(){ return C.contacteur && C.mode === "balayage" && (C.unique || C.ecran) && !A.ouvert && !A.enPause && !occupe(); },
+  actif:function(){ return avecContacteur() && C.mode === "balayage" && (C.unique || C.ecran) && !A.ouvert && !A.enPause && !occupe(); },
   pas:function(){
     var liste = cibles();
     if (!balayage.actif() || !liste.length){ surbrillance(null); return; }
@@ -469,7 +471,7 @@ function dessinerPanneau(){
     curseur(d, "Attendre", .3, 3, .1, "delai", "s");
     d.appendChild(h("p", { "class":"a-aide" }, "Après un appui, les appuis suivants sont ignorés pendant ce temps."));
   });
-  caseDepliable(s1, "Utiliser un contacteur", "contacteur", function(d){
+  if (cfg.contacteur && cfg.contacteur.length) caseDepliable(s1, "Utiliser un contacteur", "contacteur", function(d){
     var modes = h("div", { "class":"a-modes", role:"radiogroup" });
     var TXT = { fonction:"Un contacteur par bouton", balayage:"Un seul contacteur, avec balayage", hasard:"Un seul contacteur, réaction au hasard" };
     var offerts = cfg.contacteur;
