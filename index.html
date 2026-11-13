@@ -570,7 +570,14 @@ function quitterJeu(){
   if (enCours){ URL.revokeObjectURL(enCours); enCours=null; }
   $("lecteur").classList.remove("open");
   try{ if(document.fullscreenElement) document.exitFullscreen(); }catch(e){}
+  bloqueJusqua = performance.now() + 1000;
 }
+/* Après la fermeture d'un jeu, les appuis sont ignorés pendant 1 s :
+   le dernier appui (ou un appui de trop) ne doit pas ouvrir le jeu qui se trouve en dessous. */
+let bloqueJusqua = 0;
+["pointerdown","pointerup","click"].forEach(t=> document.addEventListener(t, e=>{
+  if (performance.now() < bloqueJusqua && !$("lecteur").classList.contains("open")){ e.preventDefault(); e.stopPropagation(); }
+}, true));
 /* Bouton « quitter » : 3 appuis rapprochés, pour qu'un enfant ne ferme pas le jeu par erreur.
    Toujours en haut à gauche : le logo des paramètres ARCADIA est en haut à droite dans les jeux. */
 (function(){
